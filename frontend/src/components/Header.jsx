@@ -1,5 +1,18 @@
-import { Link } from "react-router-dom";
+import { Link, NavLink } from "react-router-dom";
 import { useCarrinho } from "../context/CarrinhoContext";
+
+const LINKS = [
+  { para: "/", rotulo: "Início", fim: true },
+  { para: "/vitrine", rotulo: "Vitrine", fim: false },
+  { para: "/encomenda", rotulo: "Encomenda", fim: false },
+];
+
+function classeNav({ isActive }) {
+  return (
+    "text-sm font-medium transition hover:text-acento-escuro focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-escuro focus-visible:ring-offset-2 focus-visible:ring-offset-fundo " +
+    (isActive ? "text-acento-escuro" : "text-texto")
+  );
+}
 
 export default function Header() {
   const { totalItens } = useCarrinho();
@@ -20,13 +33,14 @@ export default function Header() {
           />
         </Link>
 
-        <div className="flex items-center gap-3 sm:gap-4">
-        <Link
-          to="/encomenda"
-          className="hidden text-sm font-medium text-texto transition hover:text-acento-escuro focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-escuro focus-visible:ring-offset-2 focus-visible:ring-offset-fundo sm:inline"
-        >
-          Encomenda sob medida
-        </Link>
+        <div className="flex items-center gap-4 sm:gap-6">
+        <nav className="hidden items-center gap-4 sm:flex sm:gap-6">
+          {LINKS.map((l) => (
+            <NavLink key={l.para} to={l.para} end={l.fim} className={classeNav}>
+              {l.rotulo}
+            </NavLink>
+          ))}
+        </nav>
 
         <Link
           to="/carrinho"

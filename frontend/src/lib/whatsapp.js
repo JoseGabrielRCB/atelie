@@ -41,4 +41,10 @@ export function linkWhatsappEncomenda(nome, descricao = "") {
   return `https://wa.me/${NUMERO}?text=${encodeURIComponent(linhas.join("\n"))}`;
 }
 
+// Link genérico do WhatsApp (CTA "Falar no WhatsApp" da Home), com texto opcional.
+export function linkWhatsappTexto(texto = "") {
+  const base = `https://wa.me/${NUMERO}`;
+  return texto.trim() ? `${base}?text=${encodeURIComponent(texto.trim())}` : base;
+}
+
 export const whatsappConfigurado = Boolean(NUMERO);

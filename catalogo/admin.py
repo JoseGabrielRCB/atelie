@@ -31,10 +31,10 @@ class CategoriaAdmin(admin.ModelAdmin):
 
 @admin.register(Peca)
 class PecaAdmin(admin.ModelAdmin):
-    list_display = ["nome", "categoria", "tipo", "preco", "ativo", "criado_em"]
-    list_filter = ["ativo", "tipo", "categoria"]
+    list_display = ["nome", "categoria", "tipo", "preco", "ativo", "destaque", "criado_em"]
+    list_filter = ["ativo", "destaque", "tipo", "categoria"]
     search_fields = ["nome", "descricao"]
-    list_editable = ["ativo"]
+    list_editable = ["ativo", "destaque"]
     inlines = [VariacaoInline, ImagemInline]
 
 

@@ -68,6 +68,7 @@ Atelie/
 **Peca** — `nome`, `descricao`, `preco` (Decimal 10,2), `categoria`
 (FK→Categoria, `on_delete=PROTECT`, related_name `pecas`), `tipo`
 (`pronta` | `sob_medida`, default `pronta`), `ativo` (bool, default True — controla a vitrine),
+`destaque` (bool, default False — marca a peça para a seção "Peças em destaque" da Home),
 `criado_em` (auto_now_add).
 
 **Variacao** — `peca` (FK→Peca, `CASCADE`, related_name `variacoes`), `tamanho`
@@ -112,8 +113,8 @@ Base: `/api/`. Respostas de lista são **paginadas** (`PageNumberPagination`, `P
 
 - `GET /api/categorias/` — lista categorias.
 - `GET /api/pecas/` — lista peças **ativas** com variações e imagens aninhadas.
-  Filtros: `?categoria=<id>`, `?tipo=pronta|sob_medida`, busca `?search=<texto>` (nome/descrição),
-  ordenação `?ordering=preco|-criado_em|nome`.
+  Filtros: `?categoria=<id>`, `?tipo=pronta|sob_medida`, `?destaque=true` (peças em destaque),
+  busca `?search=<texto>` (nome/descrição), ordenação `?ordering=preco|-criado_em|nome`.
 - `GET /api/pecas/{id}/` — detalhe de uma peça.
 - `POST /api/encomendas/` — **público** (`AllowAny`): cria uma encomenda sob medida via
   `multipart/form-data`. Campos: `nome`*, `contato`*, `descricao`*, `tamanho_medidas`,
@@ -218,3 +219,7 @@ EMAIL/PASSWORD`, `VITE_API_URL`, `VITE_WHATSAPP`. Veja `.env.example`.
   Endpoint público não ecoa nome/contato. `test_encomendas.py` cobre criação pública com imagens
   (201/`recebido`), obrigatórios (400), anônimo não lista (401), admin lista/PATCH status/exclui,
   e limites de imagens (quantidade/tipo/tamanho). Suíte: **24 testes passando**.
+- **2026-06-20** — Campo `destaque` (bool, default False) na `Peca` (migration `0003`) para curadoria
+  da Home. Exposto/editável no `PecaSerializer`, filtrável em `?destaque=true` na listagem pública,
+  e no Django Admin (`list_editable`/`list_filter`). Testes de retorno do campo e do filtro.
+  Suíte: **26 testes passando**.

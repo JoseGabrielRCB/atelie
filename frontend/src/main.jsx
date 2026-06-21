@@ -7,6 +7,7 @@ import App from "./App.jsx";
 import { CarrinhoProvider } from "./context/CarrinhoContext.jsx";
 import { AuthProvider } from "./context/AuthContext.jsx";
 // Cliente (público)
+import Home from "./pages/Home.jsx";
 import Vitrine from "./pages/Vitrine.jsx";
 import DetalhePeca from "./pages/DetalhePeca.jsx";
 import Carrinho from "./pages/Carrinho.jsx";
@@ -38,7 +39,8 @@ const router = createBrowserRouter([
     path: "/",
     element: <App />,
     children: [
-      { index: true, element: <Vitrine /> },
+      { index: true, element: <Home /> },
+      { path: "vitrine", element: <Vitrine /> },
       { path: "peca/:id", element: <DetalhePeca /> },
       { path: "carrinho", element: <Carrinho /> },
       { path: "encomenda", element: <Encomenda /> },

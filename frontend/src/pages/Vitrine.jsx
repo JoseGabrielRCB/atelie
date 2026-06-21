@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { usePecas } from "../hooks/usePecas";
-import Apresentacao from "../components/Apresentacao";
 import Filtro from "../components/Filtro";
 import PecaCard from "../components/PecaCard";
 import { Erro, Vazio, GradeSkeleton } from "../components/Estado";
+import { SITE } from "../config/site";
 
 export default function Vitrine() {
   const [busca, setBusca] = useState("");
@@ -36,11 +36,14 @@ export default function Vitrine() {
 
   return (
     <section>
-      <Apresentacao />
-
-      <h2 className="mb-6 font-display text-2xl font-semibold text-texto sm:text-3xl">
-        Nossa vitrine
-      </h2>
+      <div className="mb-6">
+        <h1 className="font-display text-3xl font-semibold text-texto sm:text-4xl">
+          Vitrine
+        </h1>
+        <p className="mt-1 text-texto-suave">
+          Conheça as peças disponíveis no {SITE.nome} em {SITE.cidade}.
+        </p>
+      </div>
 
       <Filtro
         busca={busca}

@@ -45,6 +45,36 @@ def test_busca_por_nome(api, peca_ativa):
     assert resp_vazia.data["count"] == 0
 
 
+def test_campo_destaque_retornado_na_api(api, peca_ativa):
+    url = reverse("peca-detail", args=[peca_ativa.id])
+    resp = api.get(url)
+
+    assert resp.status_code == 200
+    assert "destaque" in resp.data
+    assert resp.data["destaque"] is False  # default
+
+
+def test_filtro_por_destaque(api, peca_ativa, categoria):
+    from catalogo.models import Peca
+
+    destaque = Peca.objects.create(
+        nome="Vestido Destaque",
+        descricao="Em evidência.",
+        preco="299.90",
+        categoria=categoria,
+        ativo=True,
+        destaque=True,
+    )
+
+    url = reverse("peca-list")
+    resp = api.get(url, {"destaque": "true"})
+
+    assert resp.status_code == 200
+    nomes = [p["nome"] for p in resp.data["results"]]
+    assert destaque.nome in nomes
+    assert peca_ativa.nome not in nomes  # peca_ativa tem destaque=False
+
+
 def test_lista_categorias_publica(api, categoria):
     url = reverse("categoria-list")
     resp = api.get(url)

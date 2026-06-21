@@ -48,6 +48,11 @@ class Peca(models.Model):
         default=Tipo.PRONTA,
     )
     ativo = models.BooleanField("ativo", default=True)
+    destaque = models.BooleanField(
+        "destaque",
+        default=False,
+        help_text="Aparece na seção 'Peças em destaque' da Home.",
+    )
     criado_em = models.DateTimeField("criado em", auto_now_add=True)
 
     class Meta:

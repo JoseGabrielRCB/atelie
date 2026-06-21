@@ -63,6 +63,7 @@ class PecaSerializer(serializers.ModelSerializer):
             "categoria_nome",
             "tipo",
             "ativo",
+            "destaque",
             "criado_em",
             "variacoes",
             "imagens",

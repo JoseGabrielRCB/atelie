@@ -28,7 +28,7 @@ class CategoriaViewSet(viewsets.ModelViewSet):
 
 class PecaViewSet(viewsets.ModelViewSet):
     serializer_class = PecaSerializer
-    filterset_fields = ["categoria", "tipo"]
+    filterset_fields = ["categoria", "tipo", "destaque"]
     search_fields = ["nome", "descricao"]
     ordering_fields = ["criado_em", "preco", "nome"]
 
