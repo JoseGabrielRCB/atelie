@@ -6,6 +6,7 @@ const LINKS = [
   { para: "/admin/pecas", rotulo: "Peças", fim: false },
   { para: "/admin/estoque", rotulo: "Estoque", fim: false },
   { para: "/admin/categorias", rotulo: "Categorias", fim: false },
+  { para: "/admin/destaques", rotulo: "Destaques", fim: false },
   { para: "/admin/encomendas", rotulo: "Encomendas", fim: false },
 ];
 

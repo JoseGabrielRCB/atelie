@@ -15,6 +15,7 @@ import PecasLista from "./pages/admin/PecasLista.jsx";
 import RedirecionaEdicao from "./components/admin/RedirecionaEdicao.jsx";
 import Estoque from "./pages/admin/Estoque.jsx";
 import Categorias from "./pages/admin/Categorias.jsx";
+import Destaques from "./pages/admin/Destaques.jsx";
 import Encomendas from "./pages/admin/Encomendas.jsx";
 
 // Árvore de rotas compartilhada (cliente: BrowserRouter; SSG: StaticRouter).
@@ -48,6 +49,7 @@ export default function AppRoutes() {
         <Route path="pecas/:id" element={<RedirecionaEdicao />} />
         <Route path="estoque" element={<Estoque />} />
         <Route path="categorias" element={<Categorias />} />
+        <Route path="destaques" element={<Destaques />} />
         <Route path="encomendas" element={<Encomendas />} />
       </Route>
     </Routes>

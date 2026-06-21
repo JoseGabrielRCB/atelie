@@ -44,6 +44,7 @@ export default function Dashboard() {
   const pecas = pecasQ.data ?? [];
   const ativas = pecas.filter((p) => p.ativo).length;
   const ocultas = pecas.length - ativas;
+  const destaques = pecas.filter((p) => p.destaque).length;
   const variacoes = pecas.flatMap((p) => p.variacoes ?? []);
   const esgotadas = variacoes.filter((v) => v.esgotado).length;
   const totalCategorias = catQ.data?.count ?? catQ.data?.results?.length ?? 0;
@@ -61,6 +62,15 @@ export default function Dashboard() {
         <Cartao titulo="Variações" valor={variacoes.length} />
         <Cartao titulo="Esgotadas" valor={esgotadas} destaque={esgotadas > 0} />
         <Cartao titulo="Categorias" valor={totalCategorias} />
+        <Link
+          to="/admin/destaques"
+          className="rounded-lg border border-borda bg-superficie p-5 transition hover:border-acento-escuro focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-escuro"
+        >
+          <p className="text-sm text-texto-suave">Peças em destaque</p>
+          <p className="mt-1 font-display text-3xl font-semibold text-texto">
+            {destaques}
+          </p>
+        </Link>
         <Cartao
           titulo="Encomendas novas"
           valor={encomendasNovas}
@@ -76,6 +86,7 @@ export default function Dashboard() {
         <Atalho para="/admin/pecas">Gerenciar peças</Atalho>
         <Atalho para="/admin/estoque">Controle de estoque</Atalho>
         <Atalho para="/admin/categorias">Categorias e vitrine</Atalho>
+        <Atalho para="/admin/destaques">Peças em destaque</Atalho>
         <Atalho para="/admin/encomendas">Ver encomendas</Atalho>
       </div>
     </section>
