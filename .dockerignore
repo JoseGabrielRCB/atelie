@@ -1,0 +1,16 @@
+# Não enviar para o build do backend:
+.venv
+**/__pycache__
+*.pyc
+.pytest_cache
+.git
+.gitignore
+.env
+*.sqlite3
+media
+staticfiles
+frontend
+docker-compose.yml
+README.md
+CLAUDE.md
+STYLE.md

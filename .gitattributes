@@ -1,0 +1,15 @@
+# Normaliza finais de linha: LF no repositório para todos os arquivos de texto.
+# Garante consistência entre Windows (dev) e Linux (containers Docker).
+* text=auto eol=lf
+
+# Scripts shell PRECISAM de LF para rodar no container Linux.
+*.sh text eol=lf
+
+# Arquivos binários: nunca converter.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.ico binary
+*.pdf binary

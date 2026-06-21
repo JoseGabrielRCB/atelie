@@ -1,0 +1,75 @@
+# Stack completa do Ateliê: banco + backend (Django) + frontend (Vite).
+# Subir tudo com:  docker compose up        (use -d para rodar em segundo plano)
+# Parar:           docker compose down      (-v também apaga o banco)
+#
+# Acessos:
+#   Frontend (vitrine):   http://localhost:5173
+#   API/Backend:          http://localhost:8000/api/
+#   Django Admin:         http://localhost:8000/admin/
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: atelie_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-atelie}
+      POSTGRES_USER: ${DB_USER:-atelie}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-atelie}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - atelie_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-atelie} -d ${DB_NAME:-atelie}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: atelie_backend
+    restart: unless-stopped
+    # Carrega as variáveis do .env e sobrescreve o necessário para rodar em container.
+    env_file: .env
+    environment:
+      # Dentro da rede do compose o banco é o serviço "db", não "localhost".
+      DB_HOST: db
+      DB_PORT: 5432
+      # Superuser criado automaticamente no primeiro start (troque a senha!).
+      DJANGO_SUPERUSER_USERNAME: ${DJANGO_SUPERUSER_USERNAME:-admin}
+      DJANGO_SUPERUSER_EMAIL: ${DJANGO_SUPERUSER_EMAIL:-admin@atelie.local}
+      DJANGO_SUPERUSER_PASSWORD: ${DJANGO_SUPERUSER_PASSWORD:-Atelie@2026}
+    volumes:
+      - .:/app                 # hot reload do código
+      - atelie_media:/app/media # uploads persistidos
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: atelie_frontend
+    restart: unless-stopped
+    environment:
+      # O navegador acessa a API pela porta publicada no host.
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+      VITE_WHATSAPP: ${VITE_WHATSAPP:-5581990000000}
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - ./frontend:/app        # hot reload do código
+      - /app/node_modules      # mantém o node_modules do container (Linux)
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  atelie_pgdata:
+  atelie_media:

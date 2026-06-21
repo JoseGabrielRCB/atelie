@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.Python
+
+# Ambiente virtual
+.venv/
+venv/
+env/
+
+# Variáveis de ambiente / segredos
+.env
+
+# Banco / mídia
+*.sqlite3
+/media/
+
+# Coletor de estáticos
+/staticfiles/
+
+# Testes / cobertura
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDEs / SO
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
