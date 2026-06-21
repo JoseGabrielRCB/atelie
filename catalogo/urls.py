@@ -6,6 +6,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from .views import (
     CategoriaViewSet,
+    CorViewSet,
     EncomendaViewSet,
     ImagemViewSet,
     PecaViewSet,
@@ -14,6 +15,7 @@ from .views import (
 
 router = DefaultRouter()
 router.register("categorias", CategoriaViewSet, basename="categoria")
+router.register("cores", CorViewSet, basename="cor")
 router.register("pecas", PecaViewSet, basename="peca")
 router.register("variacoes", VariacaoViewSet, basename="variacao")
 router.register("imagens", ImagemViewSet, basename="imagem")

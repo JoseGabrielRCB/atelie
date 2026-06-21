@@ -4,7 +4,9 @@ from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 
 from .models import (
+    HEX_COR_VALIDATOR,
     Categoria,
+    Cor,
     Encomenda,
     EncomendaImagem,
     Imagem,
@@ -12,12 +14,47 @@ from .models import (
     Variacao,
 )
 
+# Teto de preço aceito (em reais). Acima disso, provavelmente é erro de digitação.
+PRECO_MAXIMO = 1000000
+
 
 class CategoriaSerializer(serializers.ModelSerializer):
+    nome = serializers.CharField(
+        max_length=100,
+        validators=[
+            UniqueValidator(
+                queryset=Categoria.objects.all(),
+                message="Já existe uma categoria com esse nome.",
+            )
+        ],
+    )
+
     class Meta:
         model = Categoria
         fields = ["id", "nome", "slug"]
         read_only_fields = ["slug"]  # gerado automaticamente a partir do nome
+
+
+class CorSerializer(serializers.ModelSerializer):
+    """Cor da paleta reutilizável do ateliê."""
+
+    nome = serializers.CharField(
+        max_length=30,
+        validators=[
+            UniqueValidator(
+                queryset=Cor.objects.all(),
+                message="Já existe uma cor com esse nome.",
+            )
+        ],
+    )
+    hex = serializers.CharField(
+        max_length=7,
+        validators=[HEX_COR_VALIDATOR],
+    )
+
+    class Meta:
+        model = Cor
+        fields = ["id", "nome", "hex"]
 
 
 class ImagemSerializer(serializers.ModelSerializer):
@@ -40,10 +77,16 @@ class VariacaoSerializer(serializers.ModelSerializer):
         min_value=0,
         error_messages={"min_value": "O estoque não pode ser negativo."},
     )
+    # hex opcional da cor (quando escolhida na paleta salva), para o swatch.
+    cor_hex = serializers.CharField(
+        max_length=7,
+        required=False,
+        allow_blank=True,
+    )
 
     class Meta:
         model = Variacao
-        fields = ["id", "peca", "tamanho", "cor", "estoque", "esgotado"]
+        fields = ["id", "peca", "tamanho", "cor", "cor_hex", "estoque", "esgotado"]
 
 
 class PecaSerializer(serializers.ModelSerializer):
@@ -55,13 +98,28 @@ class PecaSerializer(serializers.ModelSerializer):
     # Nome único, com mensagem PT-BR. O UniqueValidator ignora a própria peça
     # automaticamente em PATCH/PUT (usa a instância do serializer).
     nome = serializers.CharField(
-        max_length=150,
+        max_length=80,
         validators=[
             UniqueValidator(
                 queryset=Peca.objects.all(),
                 message="Já existe uma peça com esse nome.",
             )
         ],
+    )
+    descricao = serializers.CharField(
+        max_length=600,
+        required=False,
+        allow_blank=True,
+    )
+    preco = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        min_value=0,
+        max_value=PRECO_MAXIMO,
+        error_messages={
+            "min_value": "O preço não pode ser negativo.",
+            "max_value": "Preço acima do permitido.",
+        },
     )
 
     class Meta:
@@ -141,22 +199,25 @@ class EncomendaCreateSerializer(serializers.ModelSerializer):
         ]
         extra_kwargs = {
             "nome": {
+                "max_length": 80,
                 "error_messages": {
                     "blank": "Informe o seu nome.",
                     "required": "Informe o seu nome.",
-                }
+                },
             },
             "contato": {
+                "max_length": 100,
                 "error_messages": {
                     "blank": "Informe um contato (telefone/WhatsApp).",
                     "required": "Informe um contato (telefone/WhatsApp).",
-                }
+                },
             },
             "descricao": {
+                "max_length": 600,
                 "error_messages": {
                     "blank": "Descreva a peça que deseja encomendar.",
                     "required": "Descreva a peça que deseja encomendar.",
-                }
+                },
             },
         }
 

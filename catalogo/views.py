@@ -10,9 +10,10 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 
-from .models import Categoria, Encomenda, EncomendaImagem, Imagem, Peca, Variacao
+from .models import Categoria, Cor, Encomenda, EncomendaImagem, Imagem, Peca, Variacao
 from .serializers import (
     CategoriaSerializer,
+    CorSerializer,
     EncomendaCreateSerializer,
     EncomendaSerializer,
     ImagemSerializer,
@@ -24,6 +25,13 @@ from .serializers import (
 class CategoriaViewSet(viewsets.ModelViewSet):
     queryset = Categoria.objects.all()
     serializer_class = CategoriaSerializer
+
+
+class CorViewSet(viewsets.ModelViewSet):
+    """Paleta de cores reutilizável (leitura pública; escrita só admin)."""
+
+    queryset = Cor.objects.all()
+    serializer_class = CorSerializer
 
 
 class PecaViewSet(viewsets.ModelViewSet):

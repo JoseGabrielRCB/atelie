@@ -4,6 +4,7 @@ from django.contrib import admin
 
 from .models import (
     Categoria,
+    Cor,
     Encomenda,
     EncomendaImagem,
     Imagem,
@@ -29,6 +30,12 @@ class CategoriaAdmin(admin.ModelAdmin):
     prepopulated_fields = {"slug": ("nome",)}
 
 
+@admin.register(Cor)
+class CorAdmin(admin.ModelAdmin):
+    list_display = ["nome", "hex"]
+    search_fields = ["nome", "hex"]
+
+
 @admin.register(Peca)
 class PecaAdmin(admin.ModelAdmin):
     list_display = ["nome", "categoria", "tipo", "preco", "ativo", "destaque", "criado_em"]
@@ -40,7 +47,7 @@ class PecaAdmin(admin.ModelAdmin):
 
 @admin.register(Variacao)
 class VariacaoAdmin(admin.ModelAdmin):
-    list_display = ["peca", "tamanho", "cor", "estoque", "esgotado"]
+    list_display = ["peca", "tamanho", "cor", "cor_hex", "estoque", "esgotado"]
     list_filter = ["tamanho"]
     search_fields = ["peca__nome", "cor"]
 

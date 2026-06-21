@@ -50,7 +50,7 @@ Atelie/
 │   ├── settings.py       # lê tudo do ambiente; DRF, JWT, CORS, media, pt-br
 │   └── urls.py           # /admin, /api/ (catalogo.urls), media em DEBUG
 └── catalogo/             # app único
-    ├── models.py         # Categoria, Peca, Variacao, Imagem
+    ├── models.py         # Categoria, Cor, Peca, Variacao, Imagem, Encomenda
     ├── serializers.py    # serializers aninhados + campo calculado `esgotado`
     ├── views.py          # ModelViewSets (vitrine pública / CRUD admin)
     ├── urls.py           # DefaultRouter + rotas JWT (login/refresh)
@@ -58,15 +58,23 @@ Atelie/
     ├── exceptions.py     # handler de erro do DRF (mensagens PT-BR)
     ├── migrations/
     ├── management/commands/seed_dados.py   # dados de exemplo
-    └── tests/            # test_vitrine.py, test_estoque.py, test_auth.py, conftest.py
+    └── tests/            # test_vitrine, test_estoque, test_auth, test_encomendas,
+                          # test_exclusao, test_validacoes, conftest.py
 ```
 
 ## Modelo de dados
 
-**Categoria** — `nome` (texto), `slug` (único, gerado de `nome` no `save()` se vazio).
+**Categoria** — `nome` (texto, **único** — `unique=True`, `max_length=100`, mensagem PT-BR
+"Já existe uma categoria com esse nome."), `slug` (único, gerado de `nome` no `save()` se vazio).
 
-**Peca** — `nome` (**único** — `unique=True`, mensagem PT-BR "Já existe uma peça com esse nome."),
-`descricao`, `preco` (Decimal 10,2), `categoria`
+**Cor** — biblioteca de cores **reutilizável** do ateliê. `nome` (texto, **único**, `max_length=30`)
+e `hex` (`max_length=7`, validado como `#RRGGBB` via `RegexValidator` `^#[0-9A-Fa-f]{6}$`, mensagem
+PT-BR "Use uma cor no formato #RRGGBB."). Ao escolher uma cor salva numa variação, o `cor`/`cor_hex`
+da variação são preenchidos para o site renderizar a amostra (swatch).
+
+**Peca** — `nome` (**único** — `unique=True`, `max_length=80`, mensagem PT-BR "Já existe uma peça
+com esse nome."), `descricao` (`max_length=600`), `preco` (Decimal 10,2 — serializer valida
+min `0` e máx `1000000.00`), `categoria`
 (FK→Categoria, `on_delete=CASCADE`, related_name `pecas`), `tipo`
 (`pronta` | `sob_medida`, default `pronta`), `ativo` (bool, default True — controla a vitrine),
 `destaque` (bool, default False — marca a peça para a seção "Peças em destaque" da Home),
@@ -75,14 +83,17 @@ Atelie/
 **Variacao** — `peca` (FK→Peca, `CASCADE`, related_name `variacoes`), `tamanho`
 (choices sugeridos P/M/G/GG/Único, mas **aceita texto livre** — inclusive numéricos como
 `12`/`38`; o `VariacaoSerializer` declara `tamanho` como `CharField` para não virar
-`ChoiceField`), `cor`, `estoque` (`PositiveIntegerField`, default 0).
-`unique_together = (peca, tamanho, cor)`. Propriedade `esgotado` → `estoque == 0`.
+`ChoiceField`), `cor` (texto livre, `max_length=50`), `cor_hex` (`max_length=7`, `blank=True` —
+hex opcional da cor quando vem da paleta salva), `estoque` (`PositiveIntegerField`, default 0).
+`unique_together = (peca, tamanho, cor)` (continua só sobre `cor`, NÃO virou FK).
+Propriedade `esgotado` → `estoque == 0`.
 
 **Imagem** — `peca` (FK→Peca, `CASCADE`, related_name `imagens`), `arquivo` (ImageField,
 `upload_to="pecas/"`), `principal` (bool, default False).
 
-**Encomenda** — pedido **sob medida** enviado pelo cliente (público). `nome` (obrigatório),
-`contato` (obrigatório — telefone/WhatsApp), `descricao` (TextField, obrigatório),
+**Encomenda** — pedido **sob medida** enviado pelo cliente (público). `nome` (obrigatório,
+`max_length=80`), `contato` (obrigatório — telefone/WhatsApp, `max_length=100`), `descricao`
+(TextField, obrigatório, `max_length=600`),
 `tamanho_medidas` (texto, opcional), `prazo_desejado` (DateField, opcional), `status`
 (choices: `recebido` (default) | `em_andamento` | `concluida` | `cancelada`), `criado_em`
 (auto_now_add). ordering `-criado_em`.
@@ -111,6 +122,14 @@ Atelie/
    remove as peças dela (e, por cascata já existente, as variações e imagens das peças). Excluir uma
    **peça** remove suas variações e imagens; excluir uma **variação** remove só ela. Exclusões exigem
    JWT de admin. (A migration `0004` desduplica nomes repetidos antes de aplicar o `unique`.)
+10. **Nome de categoria é único** (`Categoria.nome unique=True`): criar/editar categoria com nome já
+    existente retorna `400` `{ "nome": ["Já existe uma categoria com esse nome."] }`. (A migration
+    `0005` desduplica nomes de categoria repetidos antes de aplicar o `unique`, mesmo padrão da `0004`.)
+11. **Limites de campos** (validados no serializer com mensagens PT-BR): preço da peça entre `0` e
+    `1000000.00` (`"O preço não pode ser negativo."` / `"Preço acima do permitido."`); descrição da
+    peça e da encomenda `max_length=600`; nome de peça/encomenda `max_length=80`; contato `max_length=100`.
+12. **Cor** (`/api/cores/`) é a paleta reutilizável: `hex` deve ser `#RRGGBB` ("Use uma cor no formato
+    #RRGGBB."). A `Variacao` guarda `cor` (nome) + `cor_hex` para o swatch público; `cor` segue texto livre.
 
 ## API
 
@@ -120,6 +139,8 @@ Base: `/api/`. Respostas de lista são **paginadas** (`PageNumberPagination`, `P
 ### Públicos (leitura, sem autenticação)
 
 - `GET /api/categorias/` — lista categorias.
+- `GET /api/cores/` — lista a paleta de cores (`{ "id", "nome", "hex" }`). `GET /api/cores/{id}/`
+  para detalhe. Escrita (POST/PUT/PATCH/DELETE) exige JWT de admin.
 - `GET /api/pecas/` — lista peças **ativas** com variações e imagens aninhadas.
   Filtros: `?categoria=<id>`, `?tipo=pronta|sob_medida`, `?destaque=true` (peças em destaque),
   busca `?search=<texto>` (nome/descrição), ordenação `?ordering=preco|-criado_em|nome`.
@@ -134,7 +155,7 @@ Base: `/api/`. Respostas de lista são **paginadas** (`PageNumberPagination`, `P
 
 ### Admin (exigem JWT — escrita bloqueada por `IsAuthenticatedOrReadOnly`)
 
-- CRUD completo: `categorias`, `pecas`, `variacoes`, `imagens` (POST/PUT/PATCH/DELETE).
+- CRUD completo: `categorias`, `cores`, `pecas`, `variacoes`, `imagens` (POST/PUT/PATCH/DELETE).
 - **Encomendas** (`IsAuthenticated`): `GET /api/encomendas/` (lista paginada, imagens aninhadas,
   filtro `?status=`), `GET /api/encomendas/{id}/`, `PATCH /api/encomendas/{id}/` (atualiza
   `status`), `DELETE /api/encomendas/{id}/`. Permissão por ação (`get_permissions`: `create` =
@@ -238,3 +259,14 @@ EMAIL/PASSWORD`, `VITE_API_URL`, `VITE_WHATSAPP`. Veja `.env.example`.
   data migration que **desduplica nomes repetidos** (sufixo " (N)") antes de criar o índice único.
   Novo `test_exclusao.py` (6 testes): cascata de categoria/peça/variação e nome duplicado na
   criação/edição. Suíte: **32 testes passando**.
+- **2026-06-21** — Paleta de cores + limites de campos + categoria única (migration `0005`):
+  novo model **`Cor`** (`nome` único `max_length=30` + `hex` `#RRGGBB` validado por `RegexValidator`),
+  endpoint **`/api/cores/`** (CRUD; leitura pública, escrita JWT) via `CorViewSet`/`CorSerializer`,
+  registrado no Django Admin. `Variacao` ganhou **`cor_hex`** (`max_length=7`, `blank=True`) exposto no
+  `VariacaoSerializer` para o swatch (mantendo `cor` texto livre e `unique_together` intacto).
+  `Categoria.nome` virou **`unique=True`** (mensagem "Já existe uma categoria com esse nome." via
+  `UniqueValidator`; a migration desduplica nomes repetidos antes do índice, padrão da `0004`).
+  Limites: `Peca.nome` 150→**80**, `Peca.descricao`/`Encomenda.descricao` **`max_length=600`**,
+  `Encomenda.nome` 150→**80**; `PecaSerializer` valida **preço** entre `0` e `1000000.00`
+  ("O preço não pode ser negativo." / "Preço acima do permitido."). Novo `test_validacoes.py`
+  (6 testes). Suíte: **38 testes passando**.

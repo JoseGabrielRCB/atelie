@@ -1,14 +1,25 @@
-"""Modelos do catálogo do ateliê: Categoria, Peca, Variacao, Imagem, Encomenda."""
+"""Modelos do catálogo do ateliê: Categoria, Cor, Peca, Variacao, Imagem, Encomenda."""
 
-from django.core.validators import MinValueValidator
+from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models
 from django.utils.text import slugify
+
+# Valida cores no formato hexadecimal #RRGGBB (ex.: #B07A56).
+HEX_COR_VALIDATOR = RegexValidator(
+    regex=r"^#[0-9A-Fa-f]{6}$",
+    message="Use uma cor no formato #RRGGBB.",
+)
 
 
 class Categoria(models.Model):
     """Categoria de peças (ex.: Vestidos, Blusas)."""
 
-    nome = models.CharField("nome", max_length=100)
+    nome = models.CharField(
+        "nome",
+        max_length=100,
+        unique=True,
+        error_messages={"unique": "Já existe uma categoria com esse nome."},
+    )
     slug = models.SlugField("slug", max_length=120, unique=True, blank=True)
 
     class Meta:
@@ -25,6 +36,30 @@ class Categoria(models.Model):
         super().save(*args, **kwargs)
 
 
+class Cor(models.Model):
+    """Cor reutilizável da paleta do ateliê (biblioteca de cores).
+
+    Ao criar uma variação, o admin pode escolher uma cor salva para que o site
+    público renderize a amostra (swatch) com o ``hex`` correspondente.
+    """
+
+    nome = models.CharField("nome", max_length=30, unique=True)
+    hex = models.CharField(
+        "hex",
+        max_length=7,
+        validators=[HEX_COR_VALIDATOR],
+        help_text="Cor no formato #RRGGBB (ex.: #B07A56).",
+    )
+
+    class Meta:
+        verbose_name = "cor"
+        verbose_name_plural = "cores"
+        ordering = ["nome"]
+
+    def __str__(self):
+        return self.nome
+
+
 class Peca(models.Model):
     """Peça de roupa exibida na vitrine."""
 
@@ -34,11 +69,11 @@ class Peca(models.Model):
 
     nome = models.CharField(
         "nome",
-        max_length=150,
+        max_length=80,
         unique=True,
         error_messages={"unique": "Já existe uma peça com esse nome."},
     )
-    descricao = models.TextField("descrição", blank=True)
+    descricao = models.TextField("descrição", max_length=600, blank=True)
     preco = models.DecimalField("preço", max_digits=10, decimal_places=2)
     categoria = models.ForeignKey(
         Categoria,
@@ -93,6 +128,9 @@ class Variacao(models.Model):
         blank=True,
     )
     cor = models.CharField("cor", max_length=50, blank=True)
+    # hex opcional da cor escolhida (quando vem da paleta salva), para o swatch
+    # no site público. Mantemos `cor` como texto livre (unique_together intacto).
+    cor_hex = models.CharField("cor (hex)", max_length=7, blank=True)
     estoque = models.PositiveIntegerField(
         "estoque",
         default=0,
@@ -149,9 +187,9 @@ class Encomenda(models.Model):
         CONCLUIDA = "concluida", "Concluída"
         CANCELADA = "cancelada", "Cancelada"
 
-    nome = models.CharField("nome", max_length=150)
+    nome = models.CharField("nome", max_length=80)
     contato = models.CharField("contato", max_length=100)
-    descricao = models.TextField("descrição")
+    descricao = models.TextField("descrição", max_length=600)
     tamanho_medidas = models.CharField("tamanho/medidas", max_length=255, blank=True)
     prazo_desejado = models.DateField("prazo desejado", null=True, blank=True)
     status = models.CharField(
