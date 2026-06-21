@@ -1,24 +1,58 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Star, StarOff } from "lucide-react";
 import { useAdminPecas } from "../../hooks/useAdminPecas";
 import { useCategorias } from "../../hooks/useCategorias";
-import { excluirPeca } from "../../lib/api";
+import { useSelecao } from "../../hooks/useSelecao";
+import { excluirPeca, atualizarPeca } from "../../lib/api";
 import { useOrdenacao, ordenarPor } from "../../hooks/useOrdenacao";
+import { descreverPeca, resumoTotais } from "../../lib/exclusao";
 import Preco from "../../components/Preco";
 import { Carregando, Erro, Vazio } from "../../components/Estado";
 import { Feedback, Selo, inputClasse } from "../../components/admin/ui";
 import { CabecalhoOrdenavel } from "../../components/admin/CabecalhoOrdenavel";
+import { CaixaTodos, CaixaLinha, BarraSelecao } from "../../components/admin/Selecao";
+import ConfirmarExclusao from "../../components/admin/ConfirmarExclusao";
 import NovaPecaModal from "../../components/admin/NovaPecaModal";
 import EditarPecaModal from "../../components/admin/EditarPecaModal";
 import Modal from "../../components/admin/Modal";
+
+// Plano de exclusão de peças: cada peça com suas variações/imagens (cascata).
+function planoPecas(pecas) {
+  let totalVar = 0;
+  let totalImg = 0;
+  const itens = pecas.map((p) => {
+    totalVar += (p.variacoes ?? []).length;
+    totalImg += (p.imagens ?? []).length;
+    const linhas = [];
+    if (p.destaque) linhas.push("Sairá da seção de destaques da Home.");
+    return {
+      chave: `peca-${p.id}`,
+      titulo: descreverPeca(p),
+      linhas,
+    };
+  });
+  return {
+    itens,
+    resumo: resumoTotais({
+      pecas: pecas.length,
+      variacoes: totalVar,
+      imagens: totalImg,
+    }),
+    // Excluir peça remove variações/imagens em cascata → confirmação reforçada.
+    cascata: true,
+  };
+}
 
 export default function PecasLista() {
   const [busca, setBusca] = useState("");
   const [buscaDeb, setBuscaDeb] = useState("");
   const [categoria, setCategoria] = useState("");
   const [erroAcao, setErroAcao] = useState("");
+  const [okAcao, setOkAcao] = useState("");
+  const [exclusao, setExclusao] = useState(null);
+  const sel = useSelecao();
 
   const [params, setParams] = useSearchParams();
   // Abre o modal de NOVA peça quando a URL tem ?nova=1 (atalho do Resumo
@@ -42,21 +76,38 @@ export default function PecasLista() {
     direcao: "asc",
   });
 
-  const excluirMut = useMutation({
-    mutationFn: excluirPeca,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "pecas"] }),
+  // Atalho de destaque direto na lista (a curadoria completa fica em /admin/destaques).
+  const destaqueMut = useMutation({
+    mutationFn: ({ id, destaque }) => atualizarPeca(id, { destaque }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "pecas"] });
+      qc.invalidateQueries({ queryKey: ["pecas"] });
+    },
     onError: (e) => setErroAcao(e.message),
   });
 
-  function aoExcluir(peca) {
+  function pedirExclusao(pecasAlvo) {
+    if (pecasAlvo.length === 0) return;
     setErroAcao("");
-    if (
-      window.confirm(
-        `Excluir a peça "${peca.nome}"? Esta ação não pode ser desfeita.`
-      )
-    ) {
-      excluirMut.mutate(peca.id);
-    }
+    setOkAcao("");
+    const { itens, resumo, cascata } = planoPecas(pecasAlvo);
+    setExclusao({
+      titulo: pecasAlvo.length > 1 ? "Excluir peças" : "Excluir peça",
+      itens,
+      resumo,
+      cascata,
+      confirmacaoTexto: pecasAlvo.length === 1 ? null : "EXCLUIR",
+      alvos: pecasAlvo.map((p) => ({ id: p.id, rotulo: `Peça "${p.nome}"` })),
+      excluir: excluirPeca,
+    });
+  }
+
+  function aoConcluirExclusao({ sucesso, falhas }) {
+    qc.invalidateQueries({ queryKey: ["admin", "pecas"] });
+    qc.invalidateQueries({ queryKey: ["pecas"] });
+    sel.limpar();
+    if (falhas.length === 0) setOkAcao(`${sucesso} peça(s) excluída(s).`);
+    else setErroAcao(`${falhas.length} peça(s) não puderam ser excluídas.`);
   }
 
   function abrirModal() {
@@ -91,6 +142,8 @@ export default function PecasLista() {
     tipo: (p) => p.tipo,
     ativo: (p) => (p.ativo ? 1 : 0),
   });
+  const idsVisiveis = lista.map((p) => p.id);
+  const selecionadas = lista.filter((p) => sel.estaSelecionado(p.id));
 
   return (
     <section>
@@ -133,6 +186,11 @@ export default function PecasLista() {
           <Feedback tipo="erro">{erroAcao}</Feedback>
         </div>
       )}
+      {okAcao && (
+        <div className="mb-4">
+          <Feedback tipo="sucesso">{okAcao}</Feedback>
+        </div>
+      )}
 
       {pecasQ.isLoading && <Carregando texto="Carregando peças..." />}
       {pecasQ.isError && (
@@ -144,10 +202,24 @@ export default function PecasLista() {
       )}
 
       {!pecasQ.isLoading && !pecasQ.isError && pecas.length > 0 && (
+        <>
+        <BarraSelecao
+          quantidade={sel.quantidade}
+          aoExcluir={() => pedirExclusao(selecionadas)}
+          aoLimpar={sel.limpar}
+        />
         <div className="overflow-x-auto rounded-lg border border-borda">
           <table className="w-full min-w-[640px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-borda bg-superficie text-left text-texto-suave">
+                <th className="w-10 px-4 py-3">
+                  <CaixaTodos
+                    ids={idsVisiveis}
+                    estaSelecionado={sel.estaSelecionado}
+                    definirVarios={sel.definirVarios}
+                    rotulo="Selecionar todas as peças"
+                  />
+                </th>
                 <CabecalhoOrdenavel
                   coluna="nome"
                   rotulo="Peça"
@@ -186,11 +258,23 @@ export default function PecasLista() {
               {lista.map((p) => {
                 const temEsgotada = (p.variacoes ?? []).some((v) => v.esgotado);
                 const semVariacoes = (p.variacoes ?? []).length === 0;
+                const marcada = sel.estaSelecionado(p.id);
                 return (
                   <tr
                     key={p.id}
-                    className="border-b border-borda last:border-0 hover:bg-fundo"
+                    className={
+                      "border-b border-borda last:border-0 " +
+                      (marcada ? "bg-acento/5" : "hover:bg-fundo")
+                    }
                   >
+                    <td className="px-4 py-3">
+                      <CaixaLinha
+                        id={p.id}
+                        estaSelecionado={sel.estaSelecionado}
+                        alternar={sel.alternar}
+                        rotulo={`Selecionar ${p.nome}`}
+                      />
+                    </td>
                     <td className="px-4 py-3 font-medium text-texto">{p.nome}</td>
                     <td className="px-4 py-3 text-texto-suave">
                       {p.categoria_nome}
@@ -221,6 +305,33 @@ export default function PecasLista() {
                       <div className="flex justify-end gap-3 whitespace-nowrap">
                         <button
                           type="button"
+                          onClick={() =>
+                            destaqueMut.mutate({ id: p.id, destaque: !p.destaque })
+                          }
+                          disabled={
+                            destaqueMut.isPending &&
+                            destaqueMut.variables?.id === p.id
+                          }
+                          aria-pressed={p.destaque}
+                          aria-label={
+                            p.destaque
+                              ? `Remover "${p.nome}" dos destaques`
+                              : `Marcar "${p.nome}" como destaque`
+                          }
+                          className={
+                            "inline-flex items-center gap-1 font-medium hover:underline disabled:opacity-50 " +
+                            (p.destaque ? "text-acento-escuro" : "text-texto-suave")
+                          }
+                        >
+                          {p.destaque ? (
+                            <Star size={15} aria-hidden="true" className="fill-acento" />
+                          ) : (
+                            <StarOff size={15} aria-hidden="true" />
+                          )}
+                          {p.destaque ? "Destaque" : "Destacar"}
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => abrirEdicao(p.id)}
                           className="inline-flex items-center gap-1 font-medium text-acento-escuro hover:underline"
                         >
@@ -229,7 +340,7 @@ export default function PecasLista() {
                         </button>
                         <button
                           type="button"
-                          onClick={() => aoExcluir(p)}
+                          onClick={() => pedirExclusao([p])}
                           className="inline-flex items-center gap-1 text-erro hover:underline"
                         >
                           <Trash2 size={15} aria-hidden="true" />
@@ -243,7 +354,21 @@ export default function PecasLista() {
             </tbody>
           </table>
         </div>
+        </>
       )}
+
+      <ConfirmarExclusao
+        aberto={Boolean(exclusao)}
+        aoFechar={() => setExclusao(null)}
+        titulo={exclusao?.titulo}
+        itens={exclusao?.itens ?? []}
+        resumo={exclusao?.resumo ?? ""}
+        cascata={exclusao?.cascata ?? false}
+        confirmacaoTexto={exclusao?.confirmacaoTexto ?? null}
+        alvos={exclusao?.alvos ?? []}
+        excluir={exclusao?.excluir}
+        aoConcluir={aoConcluirExclusao}
+      />
 
       <Modal
         aberto={modalAberto}

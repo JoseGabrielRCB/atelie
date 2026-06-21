@@ -1,17 +1,27 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Plus, Minus, Check, X } from "lucide-react";
+import { Pencil, Plus, Minus, Check, X, Trash2 } from "lucide-react";
 import { useAdminPecas } from "../../hooks/useAdminPecas";
-import { atualizarVariacao } from "../../lib/api";
+import { useSelecao } from "../../hooks/useSelecao";
+import { atualizarVariacao, excluirVariacao } from "../../lib/api";
 import { useOrdenacao, ordenarPor } from "../../hooks/useOrdenacao";
+import { resumoTotais } from "../../lib/exclusao";
 import { CabecalhoOrdenavel } from "../../components/admin/CabecalhoOrdenavel";
+import { CaixaTodos, CaixaLinha, BarraSelecao } from "../../components/admin/Selecao";
+import ConfirmarExclusao from "../../components/admin/ConfirmarExclusao";
 import { Carregando, Erro, Vazio } from "../../components/Estado";
 import { Feedback, Selo, inputClasse } from "../../components/admin/ui";
+
+// Rótulo legível de uma variação para o aviso de exclusão.
+function rotuloVariacao(v) {
+  const tc = [v.tamanho, v.cor].filter(Boolean).join(" / ") || "única";
+  return `Variação "${tc}" de "${v.pecaNome}"`;
+}
 
 // Uma linha da tabela de estoque. Mantém o próprio estado local de edição,
 // inicializado a partir das props (sem efeitos). Os botões +/− e o input
 // ajustam esse estado (com clamp em 0); "Salvar" dispara a mutation.
-function LinhaEstoque({ v, salvarMut }) {
+function LinhaEstoque({ v, salvarMut, selecionada, caixa, onExcluir }) {
   const [editando, setEditando] = useState(false);
   const [valor, setValor] = useState(String(v.estoque));
   const [feedback, setFeedback] = useState(null); // { tipo, texto }
@@ -70,9 +80,10 @@ function LinhaEstoque({ v, salvarMut }) {
     <tr
       className={
         "border-b border-borda last:border-0 " +
-        (v.esgotado ? "bg-erro/5" : "hover:bg-fundo")
+        (selecionada ? "bg-acento/5" : v.esgotado ? "bg-erro/5" : "hover:bg-fundo")
       }
     >
+      <td className="px-4 py-3">{caixa}</td>
       <td className="px-4 py-3 font-medium text-texto">{v.pecaNome}</td>
       <td className="px-4 py-3">{v.tamanho || "—"}</td>
       <td className="px-4 py-3">{v.cor || "—"}</td>
@@ -149,14 +160,24 @@ function LinhaEstoque({ v, salvarMut }) {
             </button>
           </div>
         ) : (
-          <button
-            type="button"
-            onClick={iniciarEdicao}
-            aria-label={`Editar estoque de ${rotulo}`}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-borda text-texto transition hover:border-acento-escuro focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-escuro"
-          >
-            <Pencil size={16} aria-hidden="true" />
-          </button>
+          <div className="inline-flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={iniciarEdicao}
+              aria-label={`Editar estoque de ${rotulo}`}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-borda text-texto transition hover:border-acento-escuro focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-escuro"
+            >
+              <Pencil size={16} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              onClick={onExcluir}
+              aria-label={`Excluir variação ${rotulo}`}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-erro/40 text-erro transition hover:bg-erro/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-erro"
+            >
+              <Trash2 size={16} aria-hidden="true" />
+            </button>
+          </div>
         )}
       </td>
     </tr>
@@ -169,6 +190,10 @@ export default function Estoque() {
 
   const [busca, setBusca] = useState("");
   const [soEsgotadas, setSoEsgotadas] = useState(false);
+  const [exclusao, setExclusao] = useState(null);
+  const [erro, setErro] = useState("");
+  const [ok, setOk] = useState("");
+  const sel = useSelecao();
 
   const { ordenacao, alternar } = useOrdenacao("admin-estoque", {
     coluna: "pecaNome",
@@ -181,6 +206,29 @@ export default function Estoque() {
       qc.invalidateQueries({ queryKey: ["admin", "pecas"] });
     },
   });
+
+  function pedirExclusao(vars) {
+    if (vars.length === 0) return;
+    setErro("");
+    setOk("");
+    setExclusao({
+      titulo: vars.length > 1 ? "Excluir variações" : "Excluir variação",
+      itens: vars.map((v) => ({ chave: `var-${v.id}`, titulo: rotuloVariacao(v) })),
+      resumo: resumoTotais({ variacoes: vars.length }),
+      // Variação não tem dependentes em cascata → confirmação simples.
+      cascata: false,
+      confirmacaoTexto: null,
+      alvos: vars.map((v) => ({ id: v.id, rotulo: rotuloVariacao(v) })),
+      excluir: excluirVariacao,
+    });
+  }
+
+  function aoConcluirExclusao({ sucesso, falhas }) {
+    qc.invalidateQueries({ queryKey: ["admin", "pecas"] });
+    sel.limpar();
+    if (falhas.length === 0) setOk(`${sucesso} variação(ões) excluída(s).`);
+    else setErro(`${falhas.length} variação(ões) não puderam ser excluídas.`);
+  }
 
   // Achata as variações de todas as peças.
   const linhas = useMemo(() => {
@@ -214,6 +262,9 @@ export default function Estoque() {
       <Erro mensagem={pecasQ.error.message} aoTentarNovamente={pecasQ.refetch} />
     );
 
+  const idsVisiveis = ordenadas.map((v) => v.id);
+  const selecionadas = ordenadas.filter((v) => sel.estaSelecionado(v.id));
+
   return (
     <section>
       <h1 className="mb-6 font-display text-3xl font-semibold">Estoque</h1>
@@ -238,6 +289,23 @@ export default function Estoque() {
         </label>
       </div>
 
+      {erro && (
+        <div className="mb-4">
+          <Feedback tipo="erro">{erro}</Feedback>
+        </div>
+      )}
+      {ok && (
+        <div className="mb-4">
+          <Feedback tipo="sucesso">{ok}</Feedback>
+        </div>
+      )}
+
+      <BarraSelecao
+        quantidade={sel.quantidade}
+        aoExcluir={() => pedirExclusao(selecionadas)}
+        aoLimpar={sel.limpar}
+      />
+
       {ordenadas.length === 0 ? (
         <Vazio texto="Nenhuma variação encontrada." />
       ) : (
@@ -245,6 +313,14 @@ export default function Estoque() {
           <table className="w-full min-w-[640px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-borda bg-superficie text-left text-texto-suave">
+                <th className="w-10 px-4 py-3">
+                  <CaixaTodos
+                    ids={idsVisiveis}
+                    estaSelecionado={sel.estaSelecionado}
+                    definirVarios={sel.definirVarios}
+                    rotulo="Selecionar todas as variações"
+                  />
+                </th>
                 <CabecalhoOrdenavel
                   coluna="pecaNome"
                   rotulo="Peça"
@@ -276,12 +352,39 @@ export default function Estoque() {
             </thead>
             <tbody>
               {ordenadas.map((v) => (
-                <LinhaEstoque key={v.id} v={v} salvarMut={salvarMut} />
+                <LinhaEstoque
+                  key={v.id}
+                  v={v}
+                  salvarMut={salvarMut}
+                  selecionada={sel.estaSelecionado(v.id)}
+                  caixa={
+                    <CaixaLinha
+                      id={v.id}
+                      estaSelecionado={sel.estaSelecionado}
+                      alternar={sel.alternar}
+                      rotulo={`Selecionar ${rotuloVariacao(v)}`}
+                    />
+                  }
+                  onExcluir={() => pedirExclusao([v])}
+                />
               ))}
             </tbody>
           </table>
         </div>
       )}
+
+      <ConfirmarExclusao
+        aberto={Boolean(exclusao)}
+        aoFechar={() => setExclusao(null)}
+        titulo={exclusao?.titulo}
+        itens={exclusao?.itens ?? []}
+        resumo={exclusao?.resumo ?? ""}
+        cascata={exclusao?.cascata ?? false}
+        confirmacaoTexto={exclusao?.confirmacaoTexto ?? null}
+        alvos={exclusao?.alvos ?? []}
+        excluir={exclusao?.excluir}
+        aoConcluir={aoConcluirExclusao}
+      />
     </section>
   );
 }

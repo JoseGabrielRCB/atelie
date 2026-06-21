@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2, Star, CheckCircle2 } from "lucide-react";
 import { criarPeca, criarVariacao, enviarImagem } from "../../lib/api";
 import { useCategorias } from "../../hooks/useCategorias";
+import { useAdminPecas } from "../../hooks/useAdminPecas";
 import {
   BotaoPrimario,
   BotaoSecundario,
@@ -41,6 +42,7 @@ function descreverVariacao(v) {
 export default function NovaPecaModal({ aoFechar }) {
   const qc = useQueryClient();
   const { data: categorias = [] } = useCategorias();
+  const { data: pecasExistentes = [] } = useAdminPecas();
 
   const [form, setForm] = useState(formInicial);
   const [variacoes, setVariacoes] = useState([]);
@@ -55,6 +57,13 @@ export default function NovaPecaModal({ aoFechar }) {
 
   const atualizarCampo = (campo, valor) =>
     setForm((f) => ({ ...f, [campo]: valor }));
+
+  // Nome de peça é único: avisa na hora se já existir um igual.
+  const nomeDuplicado =
+    form.nome.trim() !== "" &&
+    pecasExistentes.some(
+      (p) => p.nome.trim().toLowerCase() === form.nome.trim().toLowerCase()
+    );
 
   // ---- Variações (coletor local) ----
   function adicionarVariacao() {
@@ -103,6 +112,7 @@ export default function NovaPecaModal({ aoFechar }) {
   // ---- Validação ----
   function validar() {
     if (!form.nome.trim()) return "Informe o nome da peça.";
+    if (nomeDuplicado) return "Já existe uma peça com esse nome.";
     if (form.preco === "" || Number.isNaN(Number(form.preco)))
       return "Informe um preço válido.";
     if (Number(form.preco) < 0) return "O preço não pode ser negativo.";
@@ -270,8 +280,16 @@ export default function NovaPecaModal({ aoFechar }) {
             value={form.nome}
             onChange={(e) => atualizarCampo("nome", e.target.value)}
             required
-            className={inputClasse}
+            aria-invalid={nomeDuplicado}
+            className={
+              inputClasse + (nomeDuplicado ? " border-erro focus:ring-erro/30" : "")
+            }
           />
+          {nomeDuplicado && (
+            <p className="mt-1 text-xs text-erro" role="alert">
+              Já existe uma peça com esse nome.
+            </p>
+          )}
         </Campo>
 
         <Campo label="Descrição" htmlFor="np-descricao">
@@ -504,7 +522,7 @@ export default function NovaPecaModal({ aoFechar }) {
         <BotaoSecundario type="button" onClick={aoFechar} disabled={salvando}>
           Cancelar
         </BotaoSecundario>
-        <BotaoPrimario type="submit" disabled={salvando}>
+        <BotaoPrimario type="submit" disabled={salvando || nomeDuplicado}>
           {salvando
             ? "Salvando..."
             : pecaCriadaId

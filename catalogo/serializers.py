@@ -1,6 +1,7 @@
 """Serializers da API do catálogo."""
 
 from rest_framework import serializers
+from rest_framework.validators import UniqueValidator
 
 from .models import (
     Categoria,
@@ -51,6 +52,17 @@ class PecaSerializer(serializers.ModelSerializer):
     variacoes = VariacaoSerializer(many=True, read_only=True)
     imagens = ImagemSerializer(many=True, read_only=True)
     categoria_nome = serializers.CharField(source="categoria.nome", read_only=True)
+    # Nome único, com mensagem PT-BR. O UniqueValidator ignora a própria peça
+    # automaticamente em PATCH/PUT (usa a instância do serializer).
+    nome = serializers.CharField(
+        max_length=150,
+        validators=[
+            UniqueValidator(
+                queryset=Peca.objects.all(),
+                message="Já existe uma peça com esse nome.",
+            )
+        ],
+    )
 
     class Meta:
         model = Peca

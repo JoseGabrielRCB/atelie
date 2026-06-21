@@ -56,13 +56,15 @@ frontend/
     ├── lib/
     │   ├── api.js          # HTTP: leitura pública + escrita autenticada; tokens; refresh; erros PT-BR
     │   ├── whatsapp.js     # montarMensagem() + linkWhatsapp() (encodeURIComponent)
-    │   └── pecas.js        # imagemPrincipal(), pecaEsgotada(), variacoesDisponiveis()
+    │   ├── pecas.js        # imagemPrincipal(), pecaEsgotada(), variacoesDisponiveis()
+    │   └── exclusao.js     # helpers do aviso de exclusão: plural(), descreverPeca(), resumoTotais()
     ├── hooks/
     │   ├── usePecas.js     # vitrine pública (keepPreviousData)
     │   ├── usePeca.js      # detalhe público
     │   ├── useCategorias.js
     │   ├── useAdminPecas.js # TODAS as peças (auth, paginação completa) p/ o admin
     │   ├── useAdminEncomendas.js # TODAS as encomendas (auth, paginação completa) p/ o admin
+    │   ├── useSelecao.js    # seleção de linhas (Set de ids) p/ ações em massa
     │   └── useOrdenacao.js  # estado de ordenação por tabela (persistido) + ordenarPor()
     ├── context/
     │   ├── CarrinhoContext.jsx   # carrinho do cliente + localStorage
@@ -76,6 +78,8 @@ frontend/
     │       ├── ui.jsx                # BotaoPrimario/Secundario/Perigo, Campo, Feedback, Selo, inputClasse
     │       ├── Modal.jsx             # modal acessível reutilizável (foco preso, Esc, clique fora, portal)
     │       ├── CabecalhoOrdenavel.jsx # <th> clicável (seta), usa useOrdenacao
+    │       ├── Selecao.jsx           # CaixaTodos/CaixaLinha (checkboxes) + BarraSelecao (ação em massa)
+    │       ├── ConfirmarExclusao.jsx # modal: lista agrupada do que será removido + total + confirmação reforçada; executa DELETE por id com progresso/falha parcial
     │       ├── VariacoesEditor.jsx   # CRUD de variações (usado na edição da peça)
     │       ├── ImagensEditor.jsx     # upload (multipart) / principal / remover (na edição)
     │       ├── NovaPecaModal.jsx     # form completo de NOVA peça (básicos+variações+imagens) no modal
@@ -86,7 +90,7 @@ frontend/
         ├── Home.jsx (landing /, 8 seções), Vitrine.jsx (/vitrine), DetalhePeca.jsx, Carrinho.jsx, Encomenda.jsx   # cliente
         └── admin/
             ├── Login.jsx, Dashboard.jsx, PecasLista.jsx,
-            └── Estoque.jsx, Categorias.jsx, Encomendas.jsx
+            └── Estoque.jsx, Categorias.jsx, Destaques.jsx, Encomendas.jsx
 ```
 
 ## Telas / rotas
@@ -105,12 +109,13 @@ frontend/
 |---------------------|--------------|-----------|
 | `/admin/login`      | `Login`      | Login (usuário/senha). Fora do layout do painel. Já autenticado → redireciona. |
 | `/admin`            | `Dashboard`  | Cartões: total de peças, ativas/ocultas, variações, esgotadas, categorias + atalhos (o "+ Nova peça" leva a `/admin/pecas?nova=1`). |
-| `/admin/pecas`      | `PecasLista` | Tabela **ordenável** (busca + filtro por categoria), status na vitrine/estoque; "Editar"/"Excluir" (ícones). "Nova peça" abre o **modal** (`NovaPecaModal`, `?nova=1`); "Editar" abre o **modal** de edição (`EditarPecaModal`, `?editar=<id>`) — **sem sair da tela**. |
+| `/admin/pecas`      | `PecasLista` | Tabela **ordenável** (busca + filtro por categoria), status na vitrine/estoque; "Editar"/"Excluir" (ícones) + atalho de destaque. **Seleção em massa** (checkbox por linha + "todos", barra de ação) e **exclusão com aviso** (`ConfirmarExclusao` lista variações/imagens da peça + "sai dos destaques"; confirmação reforçada por ser cascata). "Nova peça" abre o **modal** (`NovaPecaModal`, `?nova=1`); "Editar" abre `EditarPecaModal` (`?editar=<id>`). Os forms avisam **nome duplicado** junto ao campo Nome (peça é única). |
 | `/admin/pecas/nova` | →redirect    | Redireciona para `/admin/pecas?nova=1` (cadastro em modal). |
 | `/admin/pecas/:id`  | →redirect    | `RedirecionaEdicao` → `/admin/pecas?editar=<id>` (edição em modal). Mantém deep links e o "ver detalhes" das Categorias. |
-| `/admin/estoque`    | `Estoque`    | Tabela **ordenável** de variações; edição por linha com ícone, botões +1/−1 e número manual (nunca < 0); salva via PATCH; destaque/filtro de esgotadas; busca. |
-| `/admin/categorias` | `Categorias` | CRUD de categorias (inputs de largura fixa padronizada; "Nova categoria" em **modal**) + controle da vitrine (tabela ordenável com Mostrar/Ocultar e link "ver detalhes" da peça). |
-| `/admin/encomendas` | `Encomendas` | Tabela **ordenável** das encomendas sob medida (cliente, contato **formatado `(DD) NÚMERO`**, prazo, status, data) com destaque das **novas** (`recebido`). Detalhe em **modal**: dados, descrição, galeria das imagens (abrem em **popup/lightbox** na própria página, com setas e Esc), seletor de status (PATCH) e excluir (confirmação). |
+| `/admin/estoque`    | `Estoque`    | Tabela **ordenável** de variações; edição por linha com ícone, botões +1/−1 e número manual (nunca < 0); salva via PATCH; destaque/filtro de esgotadas; busca. **Excluir variação** (lixeira) e **seleção em massa** com aviso (`ConfirmarExclusao`). |
+| `/admin/categorias` | `Categorias` | CRUD de categorias (inputs de largura fixa padronizada; "Nova categoria" em **modal**) + controle da vitrine (tabela ordenável com Mostrar/Ocultar e link "ver detalhes" da peça). **Excluir categoria** (única ou em massa) abre `ConfirmarExclusao` listando as **peças que cairão em cascata** (e suas variações/imagens); confirmação reforçada (digitar o nome da categoria / `EXCLUIR`). |
+| `/admin/destaques`  | `Destaques`  | Curadoria das **peças em destaque** da Home. Tabela **ordenável** (nome, categoria, preço, status, destaque) com busca por nome e atalho "Só em destaque". Toggle por peça (ícone `Star`/`StarOff`) via PATCH `{destaque}` (`atualizarPeca`) — invalida `["admin","pecas"]` e `["pecas"]`. Contador "N peças em destaque" + lembrete suave acima de 8 (a Home mostra até 8). Aviso "em destaque, mas oculta" quando a peça está em destaque mas `ativo=false`. |
+| `/admin/encomendas` | `Encomendas` | Tabela **ordenável** das encomendas sob medida (cliente, contato **formatado `(DD) NÚMERO`**, prazo, status, data) com destaque das **novas** (`recebido`). **Seleção em massa** + exclusão com aviso (`ConfirmarExclusao` lista as imagens de referência que serão removidas). Detalhe em **modal**: dados, descrição, galeria das imagens (abrem em **popup/lightbox** na própria página, com setas e Esc), seletor de status (PATCH) e excluir (confirmação). |
 
 ## Como consome a API
 
@@ -333,3 +338,22 @@ pré-renderizadas, ex. `/peca/:id` e `/admin/*`, sobem por CSR). Preencher `SITE
   LocalBusiness/FAQPage) e `seo/useSeo.js` (SPA + Product na peça). `localStorage`/`window`
   guardados p/ o build Node. `lint` (0 erros) e `npm run build` (SSG) ok; rotas pré-renderizadas
   com H1/meta/JSON-LD no HTML estático. `/admin` fora do SSG (bloqueado no robots).
+- **2026-06-21** — Seção **Destaques** no painel (`/admin/destaques`, `pages/admin/Destaques.jsx`)
+  para o ateliê curar as peças em destaque da Home sem ir ao Django Admin. Tabela ordenável
+  (`useAdminPecas` + `CabecalhoOrdenavel`/`useOrdenacao`) com busca, atalho "Só em destaque",
+  toggle por peça (`Star`/`StarOff` → `atualizarPeca(id,{destaque})`, invalidando `["admin","pecas"]`
+  e `["pecas"]`), contador com lembrete acima de 8 e aviso "em destaque, mas oculta" (peça em
+  destaque com `ativo=false` não aparece na vitrine). Item "Destaques" no `AdminLayout`; cartão
+  "Peças em destaque" + atalho no Dashboard; atalho de estrela também na lista de Peças
+  (`PecasLista`). `lint` (0 erros) e `npm run build` (SSG) ok.
+- **2026-06-21** — Exclusão com aviso + seleção em massa. Novo componente reutilizável
+  `ConfirmarExclusao` (modal que **lista o que será removido, agrupado por item-pai** com dependentes
+  em cascata + **total**; confirmação **reforçada** em cascata: digitar o nome / `EXCLUIR`; executa
+  `DELETE` por id com **progresso** e **falha parcial**) e `Selecao.jsx` (`CaixaTodos`/`CaixaLinha`
+  + `BarraSelecao`), `useSelecao` (Set de ids) e `lib/exclusao.js` (helpers de texto/total).
+  Aplicado em **Categorias** (cascata: lista as peças e variações/imagens que cairão), **Peças**
+  (variações/imagens + "sai dos destaques"), **Estoque** (excluir variação) e **Encomendas**
+  (imagens de referência) — todas com **seleção múltipla + exclusão em massa**. Backend agora usa
+  `CASCADE` na categoria e `nome` único, então os forms de peça (`NovaPecaModal`/`EditarPecaModal`)
+  avisam **nome duplicado** junto ao campo Nome (via `useAdminPecas`, ignorando a própria peça).
+  `lint` (0 erros) e `npm run build` (SSG) ok.

@@ -4,7 +4,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Eye, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { useAdminEncomendas } from "../../hooks/useAdminEncomendas";
 import { useOrdenacao, ordenarPor } from "../../hooks/useOrdenacao";
+import { useSelecao } from "../../hooks/useSelecao";
 import { CabecalhoOrdenavel } from "../../components/admin/CabecalhoOrdenavel";
+import { CaixaTodos, CaixaLinha, BarraSelecao } from "../../components/admin/Selecao";
+import ConfirmarExclusao from "../../components/admin/ConfirmarExclusao";
+import { plural, resumoTotais } from "../../lib/exclusao";
 import Modal from "../../components/admin/Modal";
 import {
   obterEncomenda,
@@ -51,8 +55,13 @@ function formatarContato(contato) {
 }
 
 export default function Encomendas() {
+  const qc = useQueryClient();
   const q = useAdminEncomendas();
   const [detalheId, setDetalheId] = useState(null);
+  const [exclusao, setExclusao] = useState(null);
+  const [erro, setErro] = useState("");
+  const [ok, setOk] = useState("");
+  const sel = useSelecao();
   const ord = useOrdenacao("admin-encomendas", { coluna: "criado_em", direcao: "desc" });
 
   const lista = ordenarPor(
@@ -69,6 +78,40 @@ export default function Encomendas() {
   );
 
   const novas = lista.filter((e) => e.status === "recebido").length;
+  const idsVisiveis = lista.map((e) => e.id);
+  const selecionadas = lista.filter((e) => sel.estaSelecionado(e.id));
+
+  function pedirExclusao(encomendas) {
+    if (encomendas.length === 0) return;
+    setErro("");
+    setOk("");
+    let totalImg = 0;
+    const itens = encomendas.map((e) => {
+      const n = (e.imagens ?? []).length;
+      totalImg += n;
+      return {
+        chave: `enc-${e.id}`,
+        titulo: `Encomenda de "${e.nome}"`,
+        linhas: n ? [`${n} ${plural(n, "imagem de referência", "imagens de referência")}`] : [],
+      };
+    });
+    setExclusao({
+      titulo: encomendas.length > 1 ? "Excluir encomendas" : "Excluir encomenda",
+      itens,
+      resumo: resumoTotais({ encomendas: encomendas.length, imagens: totalImg }),
+      cascata: false,
+      confirmacaoTexto: null,
+      alvos: encomendas.map((e) => ({ id: e.id, rotulo: `Encomenda de "${e.nome}"` })),
+      excluir: excluirEncomenda,
+    });
+  }
+
+  function aoConcluirExclusao({ sucesso, falhas }) {
+    qc.invalidateQueries({ queryKey: ["admin", "encomendas"] });
+    sel.limpar();
+    if (falhas.length === 0) setOk(`${sucesso} encomenda(s) excluída(s).`);
+    else setErro(`${falhas.length} encomenda(s) não puderam ser excluídas.`);
+  }
 
   return (
     <section>
@@ -77,6 +120,17 @@ export default function Encomendas() {
         {novas > 0 && <Selo cor="acento">{novas} nova(s)</Selo>}
       </div>
 
+      {erro && (
+        <div className="mb-4">
+          <Feedback tipo="erro">{erro}</Feedback>
+        </div>
+      )}
+      {ok && (
+        <div className="mb-4">
+          <Feedback tipo="sucesso">{ok}</Feedback>
+        </div>
+      )}
+
       {q.isLoading && <Carregando texto="Carregando encomendas..." />}
       {q.isError && <Erro mensagem={q.error.message} aoTentarNovamente={q.refetch} />}
       {!q.isLoading && !q.isError && lista.length === 0 && (
@@ -84,10 +138,24 @@ export default function Encomendas() {
       )}
 
       {lista.length > 0 && (
+        <>
+        <BarraSelecao
+          quantidade={sel.quantidade}
+          aoExcluir={() => pedirExclusao(selecionadas)}
+          aoLimpar={sel.limpar}
+        />
         <div className="overflow-x-auto rounded-lg border border-borda">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-borda text-texto-suave">
               <tr>
+                <th className="w-10 px-4 py-3">
+                  <CaixaTodos
+                    ids={idsVisiveis}
+                    estaSelecionado={sel.estaSelecionado}
+                    definirVarios={sel.definirVarios}
+                    rotulo="Selecionar todas as encomendas"
+                  />
+                </th>
                 <CabecalhoOrdenavel coluna="nome" rotulo="Cliente" ordenacao={ord.ordenacao} aoOrdenar={ord.alternar} />
                 <CabecalhoOrdenavel coluna="contato" rotulo="Contato" ordenacao={ord.ordenacao} aoOrdenar={ord.alternar} />
                 <CabecalhoOrdenavel coluna="prazo_desejado" rotulo="Prazo" ordenacao={ord.ordenacao} aoOrdenar={ord.alternar} />
@@ -98,7 +166,24 @@ export default function Encomendas() {
             </thead>
             <tbody className="divide-y divide-borda">
               {lista.map((e) => (
-                <tr key={e.id} className={e.status === "recebido" ? "bg-acento/5" : ""}>
+                <tr
+                  key={e.id}
+                  className={
+                    sel.estaSelecionado(e.id)
+                      ? "bg-acento/10"
+                      : e.status === "recebido"
+                      ? "bg-acento/5"
+                      : ""
+                  }
+                >
+                  <td className="px-4 py-3">
+                    <CaixaLinha
+                      id={e.id}
+                      estaSelecionado={sel.estaSelecionado}
+                      alternar={sel.alternar}
+                      rotulo={`Selecionar encomenda de ${e.nome}`}
+                    />
+                  </td>
                   <td className="px-4 py-3 font-medium text-texto">{e.nome}</td>
                   <td className="px-4 py-3 text-texto-suave">{formatarContato(e.contato)}</td>
                   <td className="px-4 py-3 text-texto-suave">{dataCurta(e.prazo_desejado)}</td>
@@ -125,7 +210,21 @@ export default function Encomendas() {
             </tbody>
           </table>
         </div>
+        </>
       )}
+
+      <ConfirmarExclusao
+        aberto={Boolean(exclusao)}
+        aoFechar={() => setExclusao(null)}
+        titulo={exclusao?.titulo}
+        itens={exclusao?.itens ?? []}
+        resumo={exclusao?.resumo ?? ""}
+        cascata={exclusao?.cascata ?? false}
+        confirmacaoTexto={exclusao?.confirmacaoTexto ?? null}
+        alvos={exclusao?.alvos ?? []}
+        excluir={exclusao?.excluir}
+        aoConcluir={aoConcluirExclusao}
+      />
 
       <Modal
         aberto={Boolean(detalheId)}

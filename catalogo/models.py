@@ -32,12 +32,17 @@ class Peca(models.Model):
         PRONTA = "pronta", "Pronta"
         SOB_MEDIDA = "sob_medida", "Sob medida"
 
-    nome = models.CharField("nome", max_length=150)
+    nome = models.CharField(
+        "nome",
+        max_length=150,
+        unique=True,
+        error_messages={"unique": "Já existe uma peça com esse nome."},
+    )
     descricao = models.TextField("descrição", blank=True)
     preco = models.DecimalField("preço", max_digits=10, decimal_places=2)
     categoria = models.ForeignKey(
         Categoria,
-        on_delete=models.PROTECT,
+        on_delete=models.CASCADE,
         related_name="pecas",
         verbose_name="categoria",
     )

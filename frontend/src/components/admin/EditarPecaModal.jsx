@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { obterPeca, atualizarPeca } from "../../lib/api";
 import { useCategorias } from "../../hooks/useCategorias";
+import { useAdminPecas } from "../../hooks/useAdminPecas";
 import { Carregando, Erro } from "../Estado";
 import VariacoesEditor from "./VariacoesEditor";
 import ImagensEditor from "./ImagensEditor";
@@ -28,6 +29,7 @@ export default function EditarPecaModal({ pecaId, aoFechar }) {
 function FormEdicao({ peca, aoFechar }) {
   const qc = useQueryClient();
   const { data: categorias = [] } = useCategorias();
+  const { data: pecasExistentes = [] } = useAdminPecas();
 
   const [form, setForm] = useState({
     nome: peca.nome ?? "",
@@ -39,6 +41,15 @@ function FormEdicao({ peca, aoFechar }) {
   });
   const [erro, setErro] = useState("");
   const [ok, setOk] = useState("");
+
+  // Nome único: avisa se colidir com OUTRA peça (ignora a própria).
+  const nomeDuplicado =
+    form.nome.trim() !== "" &&
+    pecasExistentes.some(
+      (p) =>
+        p.id !== peca.id &&
+        p.nome.trim().toLowerCase() === form.nome.trim().toLowerCase()
+    );
 
   const salvarMut = useMutation({
     mutationFn: (dados) => atualizarPeca(peca.id, dados),
@@ -54,6 +65,10 @@ function FormEdicao({ peca, aoFechar }) {
     e.preventDefault();
     setErro("");
     setOk("");
+    if (nomeDuplicado) {
+      setErro("Já existe uma peça com esse nome.");
+      return;
+    }
     salvarMut.mutate({
       nome: form.nome,
       descricao: form.descricao,
@@ -83,8 +98,16 @@ function FormEdicao({ peca, aoFechar }) {
               value={form.nome}
               onChange={(e) => atualizarCampo("nome", e.target.value)}
               required
-              className={inputClasse}
+              aria-invalid={nomeDuplicado}
+              className={
+                inputClasse + (nomeDuplicado ? " border-erro focus:ring-erro/30" : "")
+              }
             />
+            {nomeDuplicado && (
+              <p className="mt-1 text-xs text-erro" role="alert">
+                Já existe uma peça com esse nome.
+              </p>
+            )}
           </Campo>
 
           <Campo label="Descrição" htmlFor="edit-descricao">
@@ -182,7 +205,7 @@ function FormEdicao({ peca, aoFechar }) {
         <BotaoPrimario
           type="submit"
           form="editar-peca-basicos"
-          disabled={salvarMut.isPending}
+          disabled={salvarMut.isPending || nomeDuplicado}
         >
           {salvarMut.isPending ? "Salvando..." : "Salvar alterações"}
         </BotaoPrimario>

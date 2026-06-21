@@ -65,8 +65,9 @@ Atelie/
 
 **Categoria** — `nome` (texto), `slug` (único, gerado de `nome` no `save()` se vazio).
 
-**Peca** — `nome`, `descricao`, `preco` (Decimal 10,2), `categoria`
-(FK→Categoria, `on_delete=PROTECT`, related_name `pecas`), `tipo`
+**Peca** — `nome` (**único** — `unique=True`, mensagem PT-BR "Já existe uma peça com esse nome."),
+`descricao`, `preco` (Decimal 10,2), `categoria`
+(FK→Categoria, `on_delete=CASCADE`, related_name `pecas`), `tipo`
 (`pronta` | `sob_medida`, default `pronta`), `ativo` (bool, default True — controla a vitrine),
 `destaque` (bool, default False — marca a peça para a seção "Peças em destaque" da Home),
 `criado_em` (auto_now_add).
@@ -103,6 +104,13 @@ Atelie/
    lista/atualiza/exclui. O ateliê analisa e dá retorno por fora (não há resposta pelo sistema).
 7. Dados do cliente na encomenda (`nome`, `contato`) são **sensíveis**: nunca logados nem
    ecoados na resposta do POST público (que devolve só `id`/`status`/`mensagem`).
+8. **Nome de peça é único** (`Peca.nome unique=True`): criar/editar peça com nome já existente
+   retorna `400` `{ "nome": ["Já existe uma peça com esse nome."] }`. O `UniqueValidator` do
+   `PecaSerializer` ignora a própria peça em PATCH/PUT.
+9. **Exclusão em cascata**: `Peca.categoria` é `on_delete=CASCADE`, então excluir uma **categoria**
+   remove as peças dela (e, por cascata já existente, as variações e imagens das peças). Excluir uma
+   **peça** remove suas variações e imagens; excluir uma **variação** remove só ela. Exclusões exigem
+   JWT de admin. (A migration `0004` desduplica nomes repetidos antes de aplicar o `unique`.)
 
 ## API
 
@@ -223,3 +231,10 @@ EMAIL/PASSWORD`, `VITE_API_URL`, `VITE_WHATSAPP`. Veja `.env.example`.
   da Home. Exposto/editável no `PecaSerializer`, filtrável em `?destaque=true` na listagem pública,
   e no Django Admin (`list_editable`/`list_filter`). Testes de retorno do campo e do filtro.
   Suíte: **26 testes passando**.
+- **2026-06-21** — Exclusão em cascata + nome único (migration `0004`): `Peca.categoria` passou de
+  `PROTECT` para **`CASCADE`** (excluir categoria remove suas peças e, em cascata, variações/imagens)
+  e `Peca.nome` virou **`unique=True`** (mensagem PT-BR "Já existe uma peça com esse nome." no
+  `PecaSerializer` via `UniqueValidator`, ignorando a própria peça em PATCH/PUT). A migration tem uma
+  data migration que **desduplica nomes repetidos** (sufixo " (N)") antes de criar o índice único.
+  Novo `test_exclusao.py` (6 testes): cascata de categoria/peça/variação e nome duplicado na
+  criação/edição. Suíte: **32 testes passando**.

@@ -123,6 +123,18 @@ Mesma identidade, porém **mais utilitário**: foco em tabelas e formulários cl
   editável; o valor nunca fica negativo; salvar dá feedback de sucesso/erro; esgotado em destaque.
 - **Campos padronizados:** inputs de um mesmo tipo (ex.: nome de categoria) têm a **mesma largura**
   fixa e contida — não esticar com `w-full`/`flex-1` quando o conteúdo é curto.
+- **Exclusão sempre com aviso:** nada é excluído sem confirmação. Um componente único
+  (`ConfirmarExclusao`) abre um modal que **lista tudo o que será removido, agrupado por item**
+  (cada item-pai com seus dependentes em cascata aninhados) e um **total** ao final; a ação é sempre
+  marcada como **irreversível**. Quando a exclusão envolve **cascata** (categorias/peças), a
+  confirmação é **reforçada**: digitar o nome do item (exclusão única) ou a palavra `EXCLUIR`
+  (em massa). O botão de confirmar é **sólido em `erro`** (branco), com `Trash2`.
+- **Seleção em massa:** tabelas do admin (Peças, Estoque, Categorias, Encomendas) têm **checkbox por
+  linha** + **"selecionar todos"** no cabeçalho (respeita filtro/busca; estado indeterminado quando
+  parcial). Com ≥1 selecionado aparece uma **barra de ação** (borda/fundo `erro` suave) com "N
+  selecionado(s)", "Excluir selecionados" (vermelho) e "Limpar seleção". A exclusão roda item a item
+  com **progresso** ("Excluindo X de N…") e **falha parcial** (lista o que não saiu, sem travar).
+  Linhas selecionadas ficam realçadas (`bg-acento/5`).
 
 ## Marca (definida — 20/06/2026)
 - **Nome de exibição:** **Atelie ++** (grafia **sem acento**, igual ao logo — padroniza a marca e
@@ -149,3 +161,4 @@ Mesma identidade, porém **mais utilitário**: foco em tabelas e formulários cl
 - 20/06/2026 — Padrões de componente do painel: modal acessível para formulários "novo", tabelas ordenáveis com ordenação persistente, ícones via `lucide-react`, edição inline de estoque, campos de largura padronizada.
 - 20/06/2026 — Nova Home (landing em `/`) com 8 seções + catálogo movido para `/vitrine`; placeholders centralizados em `config/site.js`; SEO com pré-renderização (SSG) das rotas públicas.
 - 20/06/2026 — Marca aplicada: logo (`logo-atelie.png`) como favicon e no header do cliente e do admin; bloco de apresentação na home (`apresentacao-atelie.jpg`) com "Ateliê ++ / Costura sob medida". Cards de peça ganharam borda de destaque. Assets reais ficam em `frontend/public/` (o dono adiciona).
+- 21/06/2026 — Padrão de **exclusão com aviso** (componente `ConfirmarExclusao`: lista agrupada do que será removido + total + confirmação reforçada em cascata) e **seleção em massa** nas tabelas do admin (checkbox por linha + "todos", barra de ação, progresso e falha parcial).
