@@ -3,6 +3,8 @@ import { usePecas } from "../hooks/usePecas";
 import PecaCard from "../components/PecaCard";
 import { SITE, DEPOIMENTOS, FAQ } from "../config/site";
 import { linkWhatsappTexto, whatsappConfigurado } from "../lib/whatsapp";
+import { useSeo } from "../seo/useSeo";
+import { getMeta } from "../seo/meta";
 
 // Botões reutilizados na Home (mesma identidade do STYLE.md).
 const btnPrimario =
@@ -11,6 +13,7 @@ const btnSecundario =
   "inline-flex items-center justify-center rounded-lg border border-borda bg-superficie px-6 py-3 font-medium text-texto transition hover:border-acento-escuro hover:text-acento-escuro focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-escuro";
 
 export default function Home() {
+  useSeo(getMeta("/"));
   return (
     <div className="space-y-16 sm:space-y-20">
       <Hero />

@@ -12,8 +12,10 @@ const CHAVE_USER = "atelie_admin_user";
 
 export function AuthProvider({ children }) {
   const [autenticado, setAutenticado] = useState(() => Boolean(tokens.access));
-  const [usuario, setUsuario] = useState(
-    () => localStorage.getItem(CHAVE_USER) || ""
+  const [usuario, setUsuario] = useState(() =>
+    typeof localStorage !== "undefined"
+      ? localStorage.getItem(CHAVE_USER) || ""
+      : ""
   );
   // Sinaliza quando a sessão expirou (refresh falhou) para mostrar aviso no login.
   const [expirou, setExpirou] = useState(false);

@@ -5,8 +5,11 @@ import Filtro from "../components/Filtro";
 import PecaCard from "../components/PecaCard";
 import { Erro, Vazio, GradeSkeleton } from "../components/Estado";
 import { SITE } from "../config/site";
+import { useSeo } from "../seo/useSeo";
+import { getMeta } from "../seo/meta";
 
 export default function Vitrine() {
+  useSeo(getMeta("/vitrine"));
   const [busca, setBusca] = useState("");
   const [buscaDebounced, setBuscaDebounced] = useState("");
   const [categoria, setCategoria] = useState("");

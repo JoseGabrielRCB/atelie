@@ -133,9 +133,19 @@ Mesma identidade, porém **mais utilitário**: foco em tabelas e formulários cl
 - **Imagem de apresentação:** `frontend/public/apresentacao-atelie.jpg` — bloco de apresentação do ateliê na home.
 - Obs.: o ideal é o logo em PNG com **fundo transparente** para casar com o fundo claro; se vier com fundo branco, aparece uma caixa branca no header.
 
+## Home (landing em `/`)
+- Página de apresentação com **8 seções** (Hero, Peças em destaque, Sobre, O que oferecemos, Como
+  funciona, Depoimentos, FAQ, CTA final), mesma identidade (terracota, Cormorant/Inter, cantos 8px,
+  cartões em `superficie` com borda). Uma única `<h1>` (Hero); cada seção usa `<h2>`.
+- CTAs primários em `acento-escuro` (Ver a vitrine / Falar no WhatsApp); secundários com borda.
+- Catálogo fica em `/vitrine`. Textos e dados (cidade, WhatsApp, FAQ, depoimentos) vêm de
+  `frontend/src/config/site.js` (placeholders do dono num lugar só).
+- SEO: rotas públicas pré-renderizadas (SSG), com `<head>`/JSON-LD por rota; `/admin` fora do índice.
+
 ## Histórico
 - 19/06/2026 — Criação do guia (acento terracota + Cormorant/Inter).
 - 19/06/2026 — Revisão de contraste e regras de destaque/hover/carrinho; fim do glitch de filtros. Unificado `ESTILO.md` + `STYLE.md` neste arquivo.
 - 20/06/2026 — Diretrizes do painel do admin (utilitário, mesma identidade; selos, layout próprio, acessibilidade).
 - 20/06/2026 — Padrões de componente do painel: modal acessível para formulários "novo", tabelas ordenáveis com ordenação persistente, ícones via `lucide-react`, edição inline de estoque, campos de largura padronizada.
+- 20/06/2026 — Nova Home (landing em `/`) com 8 seções + catálogo movido para `/vitrine`; placeholders centralizados em `config/site.js`; SEO com pré-renderização (SSG) das rotas públicas.
 - 20/06/2026 — Marca aplicada: logo (`logo-atelie.png`) como favicon e no header do cliente e do admin; bloco de apresentação na home (`apresentacao-atelie.jpg`) com "Ateliê ++ / Costura sob medida". Cards de peça ganharam borda de destaque. Assets reais ficam em `frontend/public/` (o dono adiciona).

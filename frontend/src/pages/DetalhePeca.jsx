@@ -2,11 +2,12 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { usePeca } from "../hooks/usePeca";
 import { useCarrinho } from "../context/CarrinhoContext";
-import { imagemPrincipal } from "../lib/pecas";
+import { imagemPrincipal, pecaEsgotada } from "../lib/pecas";
 import SeletorVariacao from "../components/SeletorVariacao";
 import Galeria from "../components/Galeria";
 import Preco from "../components/Preco";
 import { Carregando, Erro } from "../components/Estado";
+import { useSeo, useJsonLd } from "../seo/useSeo";
 
 export default function DetalhePeca() {
   const { id } = useParams();
@@ -17,6 +18,38 @@ export default function DetalhePeca() {
   const [quantidade, setQuantidade] = useState(1);
   const [adicionado, setAdicionado] = useState(false);
   const [aviso, setAviso] = useState("");
+
+  // SEO dinâmico da peça (title + JSON-LD Product). Hooks antes dos early returns.
+  useSeo(
+    peca
+      ? {
+          title: `${peca.nome} | Ateliê ++`,
+          description:
+            (peca.descricao || "").slice(0, 155) ||
+            `${peca.nome} — peça do Ateliê ++ em Campo Grande-MS.`,
+        }
+      : {}
+  );
+  useJsonLd(
+    "ld-produto",
+    peca
+      ? {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          name: peca.nome,
+          image: imagemPrincipal(peca) ? [imagemPrincipal(peca)] : undefined,
+          description: peca.descricao || undefined,
+          offers: {
+            "@type": "Offer",
+            priceCurrency: "BRL",
+            price: Number(peca.preco).toFixed(2),
+            availability: pecaEsgotada(peca)
+              ? "https://schema.org/OutOfStock"
+              : "https://schema.org/InStock",
+          },
+        }
+      : null
+  );
 
   if (isPending) return <Carregando texto="Carregando peça..." />;
   if (isError)

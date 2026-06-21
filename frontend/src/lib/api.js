@@ -9,13 +9,16 @@ const BASE = import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "";
 const CHAVE_ACCESS = "atelie_admin_access";
 const CHAVE_REFRESH = "atelie_admin_refresh";
 
+// Sem localStorage no build SSG (Node): retorna null com segurança.
+const temStorage = typeof localStorage !== "undefined";
+
 // Armazenamento dos tokens (localStorage — app de admin único).
 export const tokens = {
   get access() {
-    return localStorage.getItem(CHAVE_ACCESS);
+    return temStorage ? localStorage.getItem(CHAVE_ACCESS) : null;
   },
   get refresh() {
-    return localStorage.getItem(CHAVE_REFRESH);
+    return temStorage ? localStorage.getItem(CHAVE_REFRESH) : null;
   },
   salvar(access, refresh) {
     if (access) localStorage.setItem(CHAVE_ACCESS, access);

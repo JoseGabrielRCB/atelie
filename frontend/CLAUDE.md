@@ -21,12 +21,16 @@ mais contraste, acento terracota `#7e4e2e` (escuro, em botões), fontes Cormoran
 ## Stack e versões
 
 - React 19 + Vite 8
-- React Router DOM 7 (`createBrowserRouter`)
+- React Router DOM 7 (`<BrowserRouter>` + `<Routes>` no cliente; `<StaticRouter>` no SSG)
 - TanStack Query 5 (`@tanstack/react-query`)
 - Tailwind CSS 4 (`@tailwindcss/vite`) — tokens via `@theme` no `src/index.css`
 - Carrinho em React Context + persistência em `localStorage`
 - Auth do admin: JWT (`djangorestframework-simplejwt`) com tokens em `localStorage`
 - `lucide-react` para ícones (sempre componentes, nunca `<img>`/SVG inline como imagem)
+- **SSG próprio** (pré-renderização das rotas públicas): `react-dom/server` (`renderToString`) +
+  build SSR do Vite 8 + `prerender.js`. **Sem** dependência extra (a `vite-react-ssg` não suporta
+  Vite 8). Rotas públicas (`/`, `/vitrine`, `/encomenda`) viram HTML estático com `<head>`/JSON-LD
+  por rota; `/admin/*` nunca é pré-renderizado.
 
 ## Estrutura de pastas
 
@@ -34,12 +38,21 @@ mais contraste, acento terracota `#7e4e2e` (escuro, em botões), fontes Cormoran
 frontend/
 ├── index.html              # fontes do Google (Cormorant + Inter); favicon = /favicon.png; título "Atelie ++"
 ├── vite.config.js          # plugins react + tailwindcss; porta 5173
+├── prerender.js            # SSG: injeta <head>/JSON-LD por rota + gera sitemap.xml/robots.txt (pós-build)
 ├── .env / .env.example     # VITE_API_URL, VITE_WHATSAPP
 ├── public/                 # assets servidos na raiz "/" (o dono adiciona: logo-atelie.png, apresentacao-atelie.jpg)
 └── src/
-    ├── main.jsx            # Providers (Query/Auth/Carrinho) + rotas (cliente + admin)
-    ├── App.jsx             # layout do CLIENTE: Header + <Outlet/> + footer
+    ├── main.jsx            # entrada do CLIENTE: createRoot + <Providers><BrowserRouter><AppRoutes/>
+    ├── entry-server.jsx    # entrada do SSG: render(url) com <StaticRouter> (renderToString) + reexports p/ prerender
+    ├── Providers.jsx       # QueryClient + Auth + Carrinho (usado no cliente e no SSG)
+    ├── routes.jsx          # AppRoutes: árvore <Routes> compartilhada (cliente + SSG)
+    ├── App.jsx             # layout do CLIENTE: Header + <Outlet/> + rodapé com NAP
     ├── index.css           # Tailwind + @theme (tokens do STYLE.md)
+    ├── config/
+    │   └── site.js         # PLACEHOLDERS centralizados (WhatsApp via env, cidade, instagram, prazos…) + FAQ + DEPOIMENTOS
+    ├── seo/
+    │   ├── meta.js         # getMeta(rota), buildHead() e JSON-LD (LocalBusiness/FAQPage); ROTAS_SSG
+    │   └── useSeo.js        # useSeo() (title/description no SPA) + useJsonLd() (Product na peça)
     ├── lib/
     │   ├── api.js          # HTTP: leitura pública + escrita autenticada; tokens; refresh; erros PT-BR
     │   ├── whatsapp.js     # montarMensagem() + linkWhatsapp() (encodeURIComponent)
@@ -70,7 +83,7 @@ frontend/
     │       ├── RedirecionaEdicao.jsx # /admin/pecas/:id → /admin/pecas?editar=:id (abre o modal)
     │       └── NovaCategoriaModal.jsx # form de NOVA categoria no modal
     └── pages/
-        ├── Vitrine.jsx, DetalhePeca.jsx, Carrinho.jsx, Encomenda.jsx   # cliente
+        ├── Home.jsx (landing /, 8 seções), Vitrine.jsx (/vitrine), DetalhePeca.jsx, Carrinho.jsx, Encomenda.jsx   # cliente
         └── admin/
             ├── Login.jsx, Dashboard.jsx, PecasLista.jsx,
             └── Estoque.jsx, Categorias.jsx, Encomendas.jsx
@@ -80,7 +93,8 @@ frontend/
 
 | Rota          | Componente     | Descrição |
 |---------------|----------------|-----------|
-| `/`           | `Vitrine`      | Bloco de apresentação (`Apresentacao` — "Atelie ++ / Costura sob medida" + foto) acima da grade. Grade responsiva (2 cols mobile → 4 desktop). Busca por nome (debounce 350ms → `?search=`), filtro por categoria (`?categoria=`), ordenação `-criado_em`. Selo "Esgotado" quando todas as variações estão esgotadas. Estados: skeleton / erro / vazio. |
+| `/`           | `Home`         | **Landing/SEO** (única `<h1>`). 8 seções (copys de `COPYS_HOME.md`): Hero + 2 CTAs + microcopy; **Peças em destaque** (`?destaque=true`, fallback às recentes, reusa `PecaCard`); Sobre (foto `apresentacao-atelie.jpg`, `loading="lazy"`); O que oferecemos; Como funciona (4 passos); Depoimentos; FAQ; CTA final. Textos lidos de `config/site.js`. Pré-renderizada (SSG) com JSON-LD LocalBusiness + FAQPage. |
+| `/vitrine`    | `Vitrine`      | Catálogo (`<h1>` "Vitrine"). Grade responsiva (2 cols mobile → 4 desktop). Busca por nome (debounce 350ms → `?search=`), filtro por categoria (`?categoria=`), ordenação `-criado_em`. Selo "Esgotado" quando todas as variações estão esgotadas. Estados: skeleton / erro / vazio. CTA de encomenda no rodapé da página. Pré-renderizada (SSG). |
 | `/peca/:id`   | `DetalhePeca`  | Galeria (`Galeria` — carretel: imagem grande + setas anterior/próxima circulando da principal à última + miniaturas clicáveis com contador "i/total"), nome, preço, descrição. `SeletorVariacao` (esgotadas desabilitadas; **se só houver 1 variação disponível, vem pré-selecionada**), quantidade (**travada até escolher tamanho/cor** quando há várias), **subtotal dinâmico (preço × quantidade)**, "Adicionar ao pedido" com feedback. Peça `sob_medida` sem variações: adiciona sem variação. |
 | `/carrinho`   | `Carrinho`     | Lista de itens (ajustar/remover, com **subtotal por linha**), **total dinâmico do pedido** (preço × quantidade somado), observação livre, "Enviar pedido pelo WhatsApp". Vazio: CTA para a vitrine. |
 | `/encomenda`  | `Encomenda`    | Formulário de **encomenda sob medida**: nome, contato, descrição, **blocos de tamanho/medidas** (Tamanho, Busto, Cintura, Quadril, Comprimento — opcionais, compostos em `tamanho_medidas` ao enviar), prazo (opcional, **bloqueia datas passadas** via `min`) e imagens de referência (múltiplas, pré-visualização e remover, máx. 5 / 5 MB / jpg-png-webp). `POST` multipart para `/api/encomendas/`. Confirmação com "enviar outra"/"voltar" e botão opcional de aviso no WhatsApp. Entradas: banner na vitrine + link no header. |
@@ -163,8 +177,32 @@ npm run dev              # http://localhost:5173
 Backend precisa estar no ar (`docker compose up -d` + `python manage.py runserver` na raiz;
 `python manage.py seed_dados` para dados de exemplo). A porta 5173 já está liberada no CORS.
 
+### Build com SSG (produção)
+
+`npm run build` roda **3 passos** encadeados:
+1. `vite build` — bundle do cliente em `dist/`.
+2. `vite build --ssr src/entry-server.jsx --outDir dist-server` — bundle SSR.
+3. `node prerender.js` — para cada rota de `ROTAS_SSG` (`/`, `/vitrine`, `/encomenda`): renderiza
+   o HTML (`render(url)`), injeta `<head>` (title/description/canonical/OG/Twitter) + JSON-LD e
+   grava `dist/<rota>/index.html`; gera `dist/sitemap.xml` e `dist/robots.txt` (bloqueia `/admin`).
+
+`npm run build:spa` faz só o passo 1 (sem SSG). `dist-server/` está no `.gitignore`.
+**Hospedagem:** servir `dist/` como estático com fallback SPA para `index.html` (rotas não
+pré-renderizadas, ex. `/peca/:id` e `/admin/*`, sobem por CSR). Preencher `SITE.dominio` em
+`config/site.js` antes do deploy (usado em canonical/OG/sitemap).
+
 ## Decisões e convenções
 
+- **SEO / SSG**: pré-renderização própria (sem lib — `vite-react-ssg` não suporta Vite 8). Rotas e
+  providers ficam em `routes.jsx` + `Providers.jsx`, compartilhados por `main.jsx` (cliente,
+  `BrowserRouter` + `createRoot`) e `entry-server.jsx` (SSG, `StaticRouter` + `renderToString`).
+  Metadados/JSON-LD por rota em `seo/meta.js` (fonte única; FAQPage espelha o FAQ do `site.js`).
+  No cliente, `useSeo`/`useJsonLd` atualizam o `<head>` na navegação SPA. Código que usa
+  `localStorage`/`window` é **guardado** para rodar no build Node (`AuthContext`, `tokens`).
+- **Placeholders centralizados** em `config/site.js`: o dono troca num lugar só (WhatsApp lê de
+  `VITE_WHATSAPP`; `cidade` = "Campo Grande – MS" já preenchida; `instagram`, `tempoAtuacao`,
+  `prazoEncomenda`, `numeroPecas`, `fazAjustes`, `dominio` como `[COLCHETES]`). FAQ e depoimentos
+  também ficam lá.
 - **Tailwind v4 com `@theme`**: tokens do ESTILO.md viram utilitários (`bg-fundo`, `text-acento`,
   `font-display`). Não há `tailwind.config.js`.
 - **Carrinho**: chave única por `pecaId:variacaoId`; mesma peça/variação soma quantidade.
@@ -283,3 +321,15 @@ Backend precisa estar no ar (`docker compose up -d` + `python manage.py runserve
   medidas" virou **blocos** (Tamanho/Busto/Cintura/Quadril/Comprimento, compostos em
   `tamanho_medidas`) e o campo de prazo **bloqueia datas passadas** (`min` + validação no submit).
   `lint`/`build` ok.
+- **2026-06-20** — Nova **Home** (landing SEO) em `/` e catálogo movido para `/vitrine`
+  (Subagente B): `pages/Home.jsx` com 8 seções (copys de `COPYS_HOME.md`), placeholders
+  centralizados em `config/site.js`, header com nav (Início · Vitrine · Encomenda) e rodapé com
+  NAP. Backend ganhou `destaque` (filtro `?destaque=true`) para a curadoria da Home.
+- **2026-06-20** — **SSG/SEO próprio** (Subagente C): pré-renderização das rotas públicas sem lib
+  (a `vite-react-ssg` não roda no Vite 8). Reestruturado para `routes.jsx` + `Providers.jsx`
+  (compartilhados), `main.jsx` (cliente: `BrowserRouter`+`createRoot`) e `entry-server.jsx`
+  (`StaticRouter`+`renderToString`). `prerender.js` injeta `<head>`/JSON-LD por rota e gera
+  `sitemap.xml`/`robots.txt`. `seo/meta.js` (title/description/OG/canonical + JSON-LD
+  LocalBusiness/FAQPage) e `seo/useSeo.js` (SPA + Product na peça). `localStorage`/`window`
+  guardados p/ o build Node. `lint` (0 erros) e `npm run build` (SSG) ok; rotas pré-renderizadas
+  com H1/meta/JSON-LD no HTML estático. `/admin` fora do SSG (bloqueado no robots).

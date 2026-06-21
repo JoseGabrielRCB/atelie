@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import { criarEncomenda } from "../lib/api";
 import { linkWhatsappEncomenda, whatsappConfigurado } from "../lib/whatsapp";
+import { useSeo } from "../seo/useSeo";
+import { getMeta } from "../seo/meta";
 
 // Limites espelham a validação do backend (POST público /api/encomendas/).
 const MAX_IMAGENS = 5;
@@ -40,6 +42,7 @@ function comporMedidas(medidas) {
 const hojeISO = new Date().toLocaleDateString("en-CA");
 
 export default function Encomenda() {
+  useSeo(getMeta("/encomenda"));
   const [form, setForm] = useState(formInicial);
   const [medidas, setMedidas] = useState(medidasInicial);
   const [imagens, setImagens] = useState([]); // [{ arquivo, url }]
