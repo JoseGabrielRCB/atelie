@@ -126,3 +126,67 @@ curl http://127.0.0.1:8000/api/pecas/ \
   -H "Authorization: Bearer <access-token>"
 ```
 
+---
+
+## Bot de WhatsApp (Evolution API)
+
+Bot **privado do dono** (uso interno: alertas de estoque baixo e comandos rápidos).
+**Nunca** conversa com clientes. Roda na **Evolution API** (não-oficial, via Baileys).
+
+> ⚠️ **Use um número de telefone DEDICADO** para o bot — **nunca** o número
+> principal da loja. A API é não-oficial e há **risco de banimento** do número.
+
+Os serviços `redis` e `evolution-api` **não sobem sozinhos** com `docker compose up`.
+Suba sob demanda:
+
+```bash
+docker compose up redis evolution-api      # -d para segundo plano
+```
+
+A Evolution fica em `http://localhost:8080` e usa: o Postgres `db` (banco próprio
+`evolution`), o `redis` para cache, e um **webhook global** que entrega os eventos
+ao backend em `http://backend:8000/api/webhooks/whatsapp/` (dentro da rede do compose).
+
+### 1. Banco `evolution`
+
+A Evolution precisa de um banco **próprio** chamado `evolution`. O script
+`docker/db-init/01-evolution-db.sh` cria esse banco automaticamente — **mas só no
+primeiro init do volume do Postgres**. Se o volume `atelie_pgdata` já existia (banco
+já criado antes desta feature), crie o banco **uma vez**, manualmente:
+
+```bash
+docker compose exec db psql -U atelie -d atelie -c "CREATE DATABASE evolution;"
+```
+
+### 2. Variáveis de ambiente
+
+No `.env`, ajuste a seção do bot (veja `.env.example`): `EVOLUTION_API_KEY` (troque!),
+`EVOLUTION_INSTANCE` (ex.: `atelie-bot`), `WHATSAPP_DONO` (número do dono, só dígitos,
+formato internacional) e `ESTOQUE_BAIXO_LIMIAR`.
+
+### 3. Criar a instância e conectar o número (QR Code)
+
+Com a Evolution no ar, crie a instância (use a sua `EVOLUTION_API_KEY` no header
+`apikey` e o `EVOLUTION_INSTANCE` no corpo):
+
+```bash
+curl -X POST http://localhost:8080/instance/create \
+  -H "apikey: SUA_EVOLUTION_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"instanceName": "atelie-bot", "integration": "WHATSAPP-BAILEYS", "qrcode": true}'
+```
+
+A resposta traz o QR Code (campo `qrcode.base64`). Para reabrir/atualizar o QR depois:
+
+```bash
+curl http://localhost:8080/instance/connect/atelie-bot \
+  -H "apikey: SUA_EVOLUTION_API_KEY"
+```
+
+No celular do **número dedicado**, abra **WhatsApp → Aparelhos conectados →
+Conectar um aparelho** e leia o QR. Pronto: a sessão fica persistida no volume
+`atelie_evolution`.
+
+> O webhook global já aponta para o backend (`/api/webhooks/whatsapp/`). A rota que
+> recebe os eventos (`messages.upsert` etc.) é implementada no backend Django.
+

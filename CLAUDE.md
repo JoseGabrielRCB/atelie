@@ -201,6 +201,10 @@ Base: `/api/`. Respostas de lista são **paginadas** (`PageNumberPagination`, `P
   `MP_WEBHOOK_SECRET`) → `401` se inválida. Idempotente via `EventoPagamento`. Confirma o
   pagamento no MP; se `approved`, decrementa estoque (lock + nunca negativo) e marca o Pedido
   `pago`. Sempre `200` para duplicatas/já processados. Dispara o signal `compra_paga`.
+- `POST /api/webhooks/whatsapp/` — **a implementar (subagente C)**: webhook do bot de WhatsApp
+  do dono (Evolution API). A Evolution está configurada com **webhook global** apontando para
+  esta rota e entrega eventos `messages.upsert` (mensagens recebidas do dono) que o backend
+  processa como comandos. Rota pública/CSRF-exempt; autorização por número (`WHATSAPP_DONO`).
 
 ### Admin (exigem JWT — escrita bloqueada por `IsAuthenticatedOrReadOnly`)
 
@@ -260,6 +264,16 @@ p/ as `back_urls`). Defaults dev-safe (token/segredo vazios; URLs `localhost`). 
 compose: `DJANGO_SUPERUSER_USERNAME/EMAIL/PASSWORD`, `VITE_API_URL`, `VITE_WHATSAPP`. Veja
 `.env.example`.
 
+**Bot de WhatsApp (Evolution API)**: `EVOLUTION_URL` (base da API; `http://localhost:8080` no
+host, `http://evolution-api:8080` na rede do compose), `EVOLUTION_API_KEY` (chave global, header
+`apikey`), `EVOLUTION_INSTANCE` (nome da instância, ex.: `atelie-bot`), `WHATSAPP_DONO` (**lista**
+— números autorizados separados por vírgula, só dígitos, formato internacional, ex.:
+`5567999990000`) e `ESTOQUE_BAIXO_LIMIAR` (**int**, default 1 — variação com estoque `<=` esse
+valor dispara alerta). Lidos em `settings.py` como `settings.EVOLUTION_URL`/`EVOLUTION_API_KEY`/
+`EVOLUTION_INSTANCE`/`WHATSAPP_DONO` (list)/`ESTOQUE_BAIXO_LIMIAR` (int), defaults dev-safe
+(strings vazias / `[]` / `1` → recurso desligado). Opcional: `EVOLUTION_WEBHOOK_URL` (default
+`http://backend:8000/api/webhooks/whatsapp/`).
+
 ### Expiração de pedidos e signal
 
 - Comando `python manage.py expirar_pedidos`: marca pedidos `aguardando_pagamento` com
@@ -287,6 +301,13 @@ compose: `DJANGO_SUPERUSER_USERNAME/EMAIL/PASSWORD`, `VITE_API_URL`, `VITE_WHATS
 - **Docker Compose** sobe a stack completa (db + backend + frontend) com hot reload; o
   entrypoint do backend automatiza migrate/seed/superuser. Postgres também pode subir sozinho
   (`docker compose up -d db`) para desenvolvimento sem container do app.
+- **Bot de WhatsApp (Evolution API)** — serviços `redis` (cache) + `evolution-api`
+  (`atendai/evolution-api:v2.1.1`, porta `8080`) **não sobem por padrão**; suba sob demanda:
+  `docker compose up redis evolution-api`. A Evolution usa banco PRÓPRIO `evolution` no Postgres
+  `db` (criado por `docker/db-init/01-evolution-db.sh` no 1º init do volume; se o `pgdata` já
+  existia, crie manualmente — ver README), cache no `redis`, e **webhook global** para
+  `/api/webhooks/whatsapp/` no backend. Sessão do WhatsApp persistida no volume
+  `atelie_evolution`. Número **dedicado** (risco de banimento — nunca o principal da loja).
 - **Testes com pytest-django** (`pytest.ini` aponta `DJANGO_SETTINGS_MODULE=config.settings`).
 
 ## Histórico de mudanças
@@ -350,3 +371,17 @@ compose: `DJANGO_SUPERUSER_USERNAME/EMAIL/PASSWORD`, `VITE_API_URL`, `VITE_WHATS
   `expirar_pedidos`. Novas envs `MP_ACCESS_TOKEN`/`MP_WEBHOOK_SECRET`/`MP_PUBLIC_URL`/`FRONTEND_URL`.
   Dependência `mercadopago==3.2.0` (instalada no container; **rode `docker compose build backend`**
   para persistir na imagem). Novo `test_pagamentos.py` (15 testes). Suíte: **53 testes passando**.
+- **2026-06-22** — Infra do **bot de WhatsApp do dono** (privado, controle de estoque) via
+  **Evolution API** (não-oficial / Baileys), com número **DEDICADO** (risco de banimento). Dois
+  serviços novos no `docker-compose.yml` (**não** sobem por padrão): `redis` (`redis:7-alpine`,
+  volume `atelie_redis`) e `evolution-api` (`atendai/evolution-api:v2.1.1`, porta `8080`, volume
+  `atelie_evolution` p/ sessão em `/evolution/instances`). Evolution configurada 100% por env:
+  Postgres no banco PRÓPRIO `evolution` (`docker/db-init/01-evolution-db.sh` cria no 1º init do
+  volume; senão criar manualmente — ver README), cache em `redis`, e **webhook global** →
+  `${EVOLUTION_WEBHOOK_URL:-http://backend:8000/api/webhooks/whatsapp/}` (`WEBHOOK_GLOBAL_WEBHOOK_BY_EVENTS=false`).
+  Novas envs lidas em `settings.py`: `EVOLUTION_URL`, `EVOLUTION_API_KEY`, `EVOLUTION_INSTANCE`,
+  `WHATSAPP_DONO` (**lista**) e `ESTOQUE_BAIXO_LIMIAR` (**int**, default 1) — defaults dev-safe.
+  README ganhou seção "Bot de WhatsApp (Evolution API)" (subir serviços, criar banco, criar
+  instância + conectar por QR). Rota `POST /api/webhooks/whatsapp/` e o envio de mensagens
+  (`sendText`) ficam para os subagentes B (notificações) e C (comandos). Sem migrations; suíte
+  inalterada. `docker compose config` validado.

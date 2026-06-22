@@ -20,6 +20,10 @@ services:
       - "${DB_PORT:-5432}:5432"
     volumes:
       - atelie_pgdata:/var/lib/postgresql/data
+      # Cria o banco "evolution" (usado pela Evolution API) no PRIMEIRO init do volume.
+      # Atenção: scripts em initdb.d só rodam quando o volume está vazio. Se o pgdata
+      # já existe, crie o banco manualmente (veja o README, seção "Bot de WhatsApp").
+      - ./docker/db-init/01-evolution-db.sh:/docker-entrypoint-initdb.d/01-evolution-db.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-atelie} -d ${DB_NAME:-atelie}"]
       interval: 5s
@@ -70,6 +74,60 @@ services:
     depends_on:
       - backend
 
+  # --------------------------------------------------------------------------
+  # Bot de WhatsApp do DONO (privado, controle de estoque) — NÃO sobe sozinho.
+  # Suba sob demanda:  docker compose up redis evolution-api
+  # Use um número de telefone DEDICADO (nunca o número principal da loja —
+  # risco de banimento na API não-oficial).
+  # --------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: atelie_redis
+    restart: unless-stopped
+    volumes:
+      - atelie_redis:/data
+    # Não publica porta no host: só serviços da rede do compose usam o cache.
+
+  evolution-api:
+    image: atendai/evolution-api:v2.1.1
+    container_name: atelie_evolution
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # URL pública da própria Evolution (usada por ela em links de QR/integrações).
+      SERVER_URL: ${EVOLUTION_URL:-http://localhost:8080}
+      # Chave global da API — todo request precisa do header "apikey".
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
+
+      # Banco: reaproveita o Postgres "db", porém num banco PRÓPRIO chamado "evolution".
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://${DB_USER:-atelie}:${DB_PASSWORD:-atelie}@db:5432/evolution
+      DATABASE_CONNECTION_CLIENT_NAME: atelie_evolution
+
+      # Cache em Redis (recomendado pela Evolution v2); cache local desligado.
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://redis:6379/0
+      CACHE_REDIS_PREFIX_KEY: evolution
+      CACHE_LOCAL_ENABLED: "false"
+
+      # Webhook global: a Evolution entrega TODOS os eventos ao backend Django.
+      # Dentro da rede do compose o backend é "backend:8000".
+      WEBHOOK_GLOBAL_ENABLED: "true"
+      WEBHOOK_GLOBAL_URL: ${EVOLUTION_WEBHOOK_URL:-http://backend:8000/api/webhooks/whatsapp/}
+      WEBHOOK_GLOBAL_WEBHOOK_BY_EVENTS: "false"
+    volumes:
+      # Sessão/instâncias do WhatsApp (Baileys) persistidas entre reinícios.
+      - atelie_evolution:/evolution/instances
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
 volumes:
   atelie_pgdata:
   atelie_media:
+  atelie_redis:
+  atelie_evolution:

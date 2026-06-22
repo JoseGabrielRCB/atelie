@@ -20,6 +20,8 @@ env = environ.Env(
     ALLOWED_HOSTS=(list, ["localhost", "127.0.0.1"]),
     CORS_ALLOWED_ORIGINS=(list, []),
     DB_PORT=(int, 5432),
+    WHATSAPP_DONO=(list, []),
+    ESTOQUE_BAIXO_LIMIAR=(int, 1),
 )
 
 # Carrega o .env se existir (em produção as vars podem vir do próprio ambiente)
@@ -173,3 +175,22 @@ MP_WEBHOOK_SECRET = env("MP_WEBHOOK_SECRET", default="")
 MP_PUBLIC_URL = env("MP_PUBLIC_URL", default="http://localhost:8000")
 # Base do frontend (para as back_urls de sucesso/pendente/falha).
 FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:5173")
+
+# --------------------------------------------------------------------------
+# Bot de WhatsApp do DONO (privado) — Evolution API (não-oficial, Baileys).
+# Uso interno do ateliê: alertas de estoque e comandos do dono. NUNCA fala com
+# clientes. Use um número de telefone DEDICADO (risco de banimento).
+# Segredos SOMENTE via ambiente. Defaults vazios = recurso desligado em dev.
+# --------------------------------------------------------------------------
+# URL base da Evolution API (ex.: http://localhost:8080 no host, ou
+# http://evolution-api:8080 dentro da rede do compose).
+EVOLUTION_URL = env("EVOLUTION_URL", default="")
+# Chave global da Evolution (header "apikey" em todas as chamadas).
+EVOLUTION_API_KEY = env("EVOLUTION_API_KEY", default="")
+# Nome da instância criada na Evolution (ex.: "atelie-bot").
+EVOLUTION_INSTANCE = env("EVOLUTION_INSTANCE", default="")
+# Números autorizados (LISTA, separados por vírgula). Recebem alertas e podem
+# comandar o bot. Apenas dígitos, formato internacional (ex.: 5567999990000).
+WHATSAPP_DONO = env("WHATSAPP_DONO")
+# Limiar de estoque baixo: variações com estoque <= este valor disparam alerta.
+ESTOQUE_BAIXO_LIMIAR = env("ESTOQUE_BAIXO_LIMIAR")
