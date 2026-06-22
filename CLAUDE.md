@@ -27,6 +27,7 @@ Toda a interface visível ao usuário é em **PT-BR**. Não há cadastro/login d
 - Pillow 12 (upload de imagens)
 - django-environ 0.14 (variáveis de ambiente via `.env`)
 - psycopg2-binary 2.9 + PostgreSQL 16 (via docker-compose)
+- requests 2.32 (chamadas HTTP ao bot de WhatsApp — Evolution API)
 - pytest 9 + pytest-django 4.12 (testes)
 
 ## Estrutura de pastas
@@ -281,7 +282,33 @@ valor dispara alerta). Lidos em `settings.py` como `settings.EVOLUTION_URL`/`EVO
   cron/scheduler (ex.: a cada 5 min: `*/5 * * * * python manage.py expirar_pedidos`; no compose:
   `docker compose exec backend python manage.py expirar_pedidos`).
 - Signal `catalogo.signals.compra_paga` (`django.dispatch.Signal`): disparado após confirmar um
-  pagamento. Args: `sender=Pedido`, `pedido=<Pedido>`. Um futuro bot de WhatsApp se inscreve nele.
+  pagamento. Args: `sender=Pedido`, `pedido=<Pedido>`. O bot de WhatsApp do dono se inscreve nele.
+- Signal `catalogo.signals.encomenda_criada` (`django.dispatch.Signal`): disparado em
+  `EncomendaViewSet.create` após salvar a encomenda + imagens. Args: `sender=Encomenda`,
+  `encomenda=<Encomenda>`. O bot do dono se inscreve para avisar de nova encomenda no painel.
+
+### Notificações do dono (bot de WhatsApp)
+
+- Módulo `catalogo/notificacoes.py`: serviço de envio + receivers dos signals acima. Notifica
+  **apenas o dono** (`settings.WHATSAPP_DONO`), nunca o cliente.
+- `enviar_whatsapp(texto, bloquear=False)`: envia para cada número via Evolution sendText
+  (`POST {EVOLUTION_URL}/message/sendText/{EVOLUTION_INSTANCE}`, header `apikey`). **Resiliente e
+  não-bloqueante**: o HTTP roda numa **thread daemon** com timeout 10s; falhas são engolidas e
+  logadas de forma genérica (só status code — nunca conteúdo nem apikey). **No-op silencioso** se
+  `EVOLUTION_URL`/`EVOLUTION_API_KEY`/`WHATSAPP_DONO` não estiverem configurados (dev/testes não
+  tocam a rede). `bloquear=True` envia síncrono (testes). O HTTP real fica em `_enviar_para` (fácil
+  de monkeypatchar). Receivers conectados no `CatalogoConfig.ready()` (`apps.py`).
+- Gatilhos (PT-BR): **compra paga** → `"🛒 Venda paga: 1× Vestido Floral M/Azul — R$ 199,90.
+  Estoque agora: 2."` (uma linha por item; lê estoque fresco pós-decremento); **estoque baixo** →
+  `"⚠️ Estoque baixo: Vestido Floral M/Azul = 1."` para itens com `estoque <= ESTOQUE_BAIXO_LIMIAR`
+  (helper exportado `checar_estoque_baixo(variacoes)`, reusável); **nova encomenda** →
+  `"📩 Nova encomenda de <nome> — '<descrição até ~60 chars>'. Veja no painel."` (único lugar com
+  nome do cliente numa msg ao dono — vai só pro dono; o nome NUNCA é logado).
+- **Dependência `requests`** (em `requirements.txt`): já presente na imagem atual; se reconstruir
+  do zero, o `pip install -r requirements.txt` do build a instala. Caso instale em container vivo:
+  `docker compose exec backend pip install requests` (não persiste — **rebuild da imagem** persiste).
+- Os receivers são resilientes por construção: uma falha de WhatsApp NUNCA quebra o webhook do
+  Mercado Pago nem o POST de encomenda.
 
 > No compose, o serviço `backend` sobrescreve `DB_HOST=db` (nome do serviço do Postgres na
 > rede do Docker). O `django-environ` lê o `.env` sem sobrescrever vars já definidas pelo
@@ -385,3 +412,14 @@ valor dispara alerta). Lidos em `settings.py` como `settings.EVOLUTION_URL`/`EVO
   instância + conectar por QR). Rota `POST /api/webhooks/whatsapp/` e o envio de mensagens
   (`sendText`) ficam para os subagentes B (notificações) e C (comandos). Sem migrations; suíte
   inalterada. `docker compose config` validado.
+- **2026-06-22** — **Notificações do dono** (bot de WhatsApp, lado de envio). Novo
+  `catalogo/notificacoes.py`: `enviar_whatsapp(texto, bloquear=False)` (Evolution `sendText`,
+  resiliente — **thread daemon**, timeout 10s, falhas logadas genéricas sem conteúdo/apikey;
+  **no-op** se desconfigurado) + helper exportado `checar_estoque_baixo(variacoes)` + receivers.
+  Novo signal `encomenda_criada` (`sender=Encomenda`, `encomenda=`) disparado em
+  `EncomendaViewSet.create` após salvar a encomenda+imagens. Receivers (conectados em
+  `CatalogoConfig.ready()`): **compra paga** (itens + estoque fresco + alerta de estoque baixo) e
+  **nova encomenda** (nome + descrição truncada ~60 chars). Falha de WhatsApp NUNCA quebra a venda/
+  encomenda. Dependência **`requests==2.32.3`** (já na imagem; rebuild persiste). `conftest.py`
+  ganhou fixture autouse `_limpar_throttle_cache` (zera cache entre testes p/ throttle não vazar
+  `429`). Novo `test_notificacoes.py` (6 testes). Sem migrations. Suíte: **59 testes passando**.

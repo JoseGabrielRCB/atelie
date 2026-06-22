@@ -43,7 +43,7 @@ from .serializers import (
     PedidoSerializer,
     VariacaoSerializer,
 )
-from .signals import compra_paga
+from .signals import compra_paga, encomenda_criada
 
 # Janela de validade do pedido aguardando pagamento.
 PEDIDO_VALIDADE_MINUTOS = 30
@@ -140,6 +140,10 @@ class EncomendaViewSet(viewsets.ModelViewSet):
         EncomendaImagem.objects.bulk_create(
             [EncomendaImagem(encomenda=encomenda, arquivo=arquivo) for arquivo in arquivos]
         )
+
+        # Avisa o dono (bot de WhatsApp). Consumidores são resilientes: uma
+        # falha de notificação NUNCA quebra a criação da encomenda.
+        encomenda_criada.send(sender=Encomenda, encomenda=encomenda)
 
         return Response(
             {

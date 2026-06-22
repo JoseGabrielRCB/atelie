@@ -4,9 +4,19 @@ from decimal import Decimal
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from rest_framework.test import APIClient
 
 from catalogo.models import Categoria, Peca, Variacao
+
+
+@pytest.fixture(autouse=True)
+def _limpar_throttle_cache():
+    """Zera o cache entre testes para o throttle (escopo ``encomendas``) não
+    vazar contagem de um teste para outro (causaria 429 espúrio)."""
+    cache.clear()
+    yield
+    cache.clear()
 
 
 @pytest.fixture
