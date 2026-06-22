@@ -8,14 +8,27 @@ export function imagemPrincipal(peca) {
   return (principal ?? imagens[0]).arquivo;
 }
 
-// Peça esgotada: tem variações e TODAS estão esgotadas.
+// Disponibilidade REAL de uma variação (estoque − reservas ativas), nunca
+// negativa. O backend envia `disponivel`; itens antigos sem o campo caem no
+// `estoque`. Usar isto (não `esgotado`/`estoque`) para decidir compra.
+export function disponivelDaVariacao(v) {
+  const d = typeof v?.disponivel === "number" ? v.disponivel : v?.estoque;
+  return typeof d === "number" ? Math.max(0, d) : 0;
+}
+
+// Variação indisponível para compra: disponibilidade real == 0.
+export function variacaoIndisponivel(v) {
+  return disponivelDaVariacao(v) === 0;
+}
+
+// Peça esgotada: tem variações e TODAS estão sem disponibilidade real.
 // Peça sob medida sem variações NÃO é considerada esgotada.
 export function pecaEsgotada(peca) {
   const variacoes = peca?.variacoes ?? [];
-  return variacoes.length > 0 && variacoes.every((v) => v.esgotado);
+  return variacoes.length > 0 && variacoes.every(variacaoIndisponivel);
 }
 
-// Variações com estoque disponível.
+// Variações com disponibilidade real (> 0).
 export function variacoesDisponiveis(peca) {
-  return (peca?.variacoes ?? []).filter((v) => !v.esgotado);
+  return (peca?.variacoes ?? []).filter((v) => !variacaoIndisponivel(v));
 }

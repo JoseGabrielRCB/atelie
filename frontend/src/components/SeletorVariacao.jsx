@@ -1,4 +1,5 @@
 // Mostra as variações como chips. As esgotadas aparecem apagadas e não clicáveis.
+import { variacaoIndisponivel } from "../lib/pecas";
 
 function rotulo(v) {
   const partes = [v.tamanho, v.cor].filter(Boolean);
@@ -12,7 +13,7 @@ export default function SeletorVariacao({ variacoes, selecionada, onSelecionar }
       <div className="flex flex-wrap gap-2">
         {variacoes.map((v) => {
           const ativa = selecionada?.id === v.id;
-          if (v.esgotado) {
+          if (variacaoIndisponivel(v)) {
             return (
               <span
                 key={v.id}

@@ -1,15 +1,44 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { useMutation } from "@tanstack/react-query";
 import { useCarrinho } from "../context/CarrinhoContext";
 import ItemCarrinho from "../components/ItemCarrinho";
 import Preco from "../components/Preco";
 import { Vazio } from "../components/Estado";
-import { linkWhatsapp, whatsappConfigurado } from "../lib/whatsapp";
+import { criarCheckout } from "../lib/api";
 
 export default function Carrinho() {
   const { itens, totalItens, totalPreco, ajustarQuantidade, remover, limpar } =
     useCarrinho();
-  const [observacao, setObservacao] = useState("");
+  const [nome, setNome] = useState("");
+  const [contato, setContato] = useState("");
+  // Erros por campo (validação no cliente) + erro geral (resposta do servidor).
+  const [erros, setErros] = useState({});
+  const [erroGeral, setErroGeral] = useState("");
+
+  // Itens que podem ser pagos online (têm variação). Sob medida fica de fora.
+  const itensPagaveis = itens.filter((i) => i.variacaoId != null);
+  const itensSobMedida = itens.filter((i) => i.variacaoId == null);
+
+  const checkout = useMutation({
+    mutationFn: criarCheckout,
+    onSuccess: (dados) => {
+      if (dados?.init_point) {
+        // Redireciona ao checkout hospedado do Mercado Pago.
+        window.location.href = dados.init_point;
+      } else {
+        setErroGeral(
+          "Não foi possível iniciar o pagamento agora. Tente novamente."
+        );
+      }
+    },
+    onError: (err) => {
+      setErroGeral(
+        err?.message ||
+          "Não foi possível iniciar o pagamento agora. Tente novamente."
+      );
+    },
+  });
 
   if (itens.length === 0) {
     return (
@@ -24,9 +53,30 @@ export default function Carrinho() {
     );
   }
 
-  function enviar() {
-    const url = linkWhatsapp(itens, observacao);
-    window.open(url, "_blank", "noopener,noreferrer");
+  function validar() {
+    const novos = {};
+    if (!nome.trim()) novos.nome = "Informe seu nome.";
+    if (!contato.trim())
+      novos.contato = "Informe um telefone ou e-mail para contato.";
+    if (itensPagaveis.length === 0)
+      novos.itens =
+        "Nenhum item do pedido pode ser pago online. Peças sob medida vão pela Encomenda.";
+    setErros(novos);
+    return Object.keys(novos).length === 0;
+  }
+
+  function finalizar(e) {
+    e.preventDefault();
+    setErroGeral("");
+    if (!validar()) return;
+    checkout.mutate({
+      nome: nome.trim(),
+      contato: contato.trim(),
+      itens: itensPagaveis.map((i) => ({
+        variacao_id: i.variacaoId,
+        quantidade: i.quantidade,
+      })),
+    });
   }
 
   return (
@@ -57,62 +107,97 @@ export default function Carrinho() {
         />
       </div>
 
-      <div className="mt-6">
-        <div className="mb-2 flex items-baseline justify-between">
-          <label
-            htmlFor="observacao"
-            className="block text-sm font-medium text-texto"
+      {/* Aviso: itens sob medida não entram no pagamento online. */}
+      {itensSobMedida.length > 0 && (
+        <p className="mt-4 rounded-lg bg-acento/10 px-4 py-3 text-sm text-texto-suave">
+          Peças sob medida não são pagas online. Para essas, finalize pela{" "}
+          <Link
+            to="/encomenda"
+            className="font-medium text-acento-escuro underline"
           >
-            Observação (opcional)
-          </label>
-          <span className="text-xs text-texto-suave">
-            {observacao.length}/300
-          </span>
-        </div>
-        <textarea
-          id="observacao"
-          value={observacao}
-          onChange={(e) => setObservacao(e.target.value)}
-          rows={3}
-          maxLength={300}
-          placeholder="Ex.: pode entregar até sexta?"
-          className="w-full rounded-lg border border-borda bg-superficie px-4 py-3 text-texto placeholder:text-texto-suave focus:border-acento-escuro focus:outline-none focus:ring-2 focus:ring-acento-escuro/30"
-        />
-      </div>
-
-      {!whatsappConfigurado && (
-        <p className="mt-4 rounded-lg bg-erro/10 px-4 py-3 text-sm text-erro">
-          O número do WhatsApp não está configurado. Defina VITE_WHATSAPP no
-          arquivo .env.
+            Encomenda
+          </Link>
+          . O pagamento abaixo cobre os demais itens.
         </p>
       )}
 
-      <div className="mt-6 flex flex-col gap-3 sm:flex-row-reverse">
-        <button
-          type="button"
-          onClick={enviar}
-          disabled={!whatsappConfigurado}
-          className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-sucesso px-6 py-3 font-medium text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="currentColor"
+      <form onSubmit={finalizar} noValidate className="mt-6">
+        <h2 className="mb-3 font-display text-xl font-semibold text-texto">
+          Finalizar compra
+        </h2>
+
+        {erroGeral && (
+          <p className="mb-4 rounded-lg bg-erro/10 px-4 py-3 text-sm text-erro">
+            {erroGeral}
+          </p>
+        )}
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label
+              htmlFor="nome"
+              className="mb-1 block text-sm font-medium text-texto"
+            >
+              Nome
+            </label>
+            <input
+              id="nome"
+              type="text"
+              value={nome}
+              onChange={(e) => setNome(e.target.value)}
+              maxLength={80}
+              autoComplete="name"
+              className="w-full rounded-lg border border-borda bg-superficie px-4 py-3 text-texto placeholder:text-texto-suave focus:border-acento-escuro focus:outline-none focus:ring-2 focus:ring-acento-escuro/30"
+            />
+            {erros.nome && (
+              <p className="mt-1 text-sm text-erro">{erros.nome}</p>
+            )}
+          </div>
+
+          <div>
+            <label
+              htmlFor="contato"
+              className="mb-1 block text-sm font-medium text-texto"
+            >
+              Contato (telefone ou e-mail)
+            </label>
+            <input
+              id="contato"
+              type="text"
+              value={contato}
+              onChange={(e) => setContato(e.target.value)}
+              maxLength={100}
+              autoComplete="tel"
+              className="w-full rounded-lg border border-borda bg-superficie px-4 py-3 text-texto placeholder:text-texto-suave focus:border-acento-escuro focus:outline-none focus:ring-2 focus:ring-acento-escuro/30"
+            />
+            {erros.contato && (
+              <p className="mt-1 text-sm text-erro">{erros.contato}</p>
+            )}
+          </div>
+        </div>
+
+        {erros.itens && (
+          <p className="mt-3 text-sm text-erro">{erros.itens}</p>
+        )}
+
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row-reverse">
+          <button
+            type="submit"
+            disabled={checkout.isPending || itensPagaveis.length === 0}
+            className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-acento-escuro px-6 py-3 font-medium text-white transition hover:bg-acento-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-escuro focus-visible:ring-offset-2 focus-visible:ring-offset-fundo disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <path d="M.057 24l1.687-6.163a11.867 11.867 0 0 1-1.587-5.946C.16 5.335 5.495 0 12.05 0a11.817 11.817 0 0 1 8.413 3.488 11.824 11.824 0 0 1 3.48 8.414c-.003 6.557-5.338 11.892-11.893 11.892a11.9 11.9 0 0 1-5.688-1.448L.057 24zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884a9.86 9.86 0 0 0 1.51 5.26l-.999 3.648 3.737-.979zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z" />
-          </svg>
-          Enviar pedido pelo WhatsApp
-        </button>
-        <button
-          type="button"
-          onClick={limpar}
-          className="rounded-lg border border-borda px-6 py-3 text-texto transition hover:bg-superficie"
-        >
-          Limpar pedido
-        </button>
-      </div>
+            {checkout.isPending ? "Redirecionando…" : "Finalizar compra"}
+          </button>
+          <button
+            type="button"
+            onClick={limpar}
+            disabled={checkout.isPending}
+            className="rounded-lg border border-borda px-6 py-3 text-texto transition hover:bg-superficie disabled:opacity-50"
+          >
+            Limpar pedido
+          </button>
+        </div>
+      </form>
     </section>
   );
 }

@@ -46,6 +46,9 @@ const ROTULOS_CAMPO = {
   categoria: "Categoria",
   descricao: "Descrição",
   arquivo: "Imagem",
+  contato: "Contato",
+  itens: "Itens",
+  disponibilidade: "",
   non_field_errors: "",
 };
 
@@ -337,6 +340,20 @@ export async function listarTodasEncomendas(filtros = {}) {
     guarda += 1;
   }
   return todas;
+}
+
+// ----------------------------------------------------------------------------
+// Checkout (pagamento online — Mercado Pago)
+// ----------------------------------------------------------------------------
+// Criação PÚBLICA (sem auth). O servidor recomputa os preços; qualquer valor do
+// cliente é ignorado. Sucesso 201: { pedido_id, init_point } — redirecionar o
+// navegador para `init_point`. Erros vêm por campo (nome/contato/itens),
+// 409 { disponibilidade: [...] } (estoque insuficiente) ou 502 { detalhe }.
+export function criarCheckout({ nome, contato, itens }) {
+  return request("/checkout/", {
+    method: "POST",
+    body: { nome, contato, itens },
+  });
 }
 
 export const obterEncomenda = (id) =>

@@ -2,7 +2,12 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { usePeca } from "../hooks/usePeca";
 import { useCarrinho } from "../context/CarrinhoContext";
-import { imagemPrincipal, pecaEsgotada } from "../lib/pecas";
+import {
+  imagemPrincipal,
+  pecaEsgotada,
+  variacaoIndisponivel,
+  disponivelDaVariacao,
+} from "../lib/pecas";
 import SeletorVariacao from "../components/SeletorVariacao";
 import Galeria from "../components/Galeria";
 import Preco from "../components/Preco";
@@ -57,18 +62,17 @@ export default function DetalhePeca() {
 
   const variacoes = peca.variacoes ?? [];
   const temVariacoes = variacoes.length > 0;
-  // Variações disponíveis (não esgotadas).
-  const disponiveis = variacoes.filter((v) => !v.esgotado);
+  // Variações disponíveis (disponibilidade real > 0).
+  const disponiveis = variacoes.filter((v) => !variacaoIndisponivel(v));
   // Se houver apenas UMA variação disponível, ela já vem pré-selecionada.
   const variacaoUnica = disponiveis.length === 1 ? disponiveis[0] : null;
   const variacaoEfetiva = variacao ?? variacaoUnica;
   // Com várias variações e nenhuma escolhida, a quantidade fica travada.
   const precisaSelecionar = temVariacoes && !variacaoEfetiva;
-  // Estoque disponível da variação efetiva; null = sem limite (sob medida).
-  const estoqueDisponivel =
-    typeof variacaoEfetiva?.estoque === "number"
-      ? variacaoEfetiva.estoque
-      : null;
+  // Disponibilidade real da variação efetiva; null = sem limite (sob medida).
+  const estoqueDisponivel = variacaoEfetiva
+    ? disponivelDaVariacao(variacaoEfetiva)
+    : null;
   const noLimiteEstoque =
     estoqueDisponivel !== null && quantidade >= estoqueDisponivel;
   const imagens = peca.imagens ?? [];
@@ -143,10 +147,9 @@ export default function DetalhePeca() {
               onSelecionar={(v) => {
                 setVariacao(v);
                 setAviso("");
-                // Ajusta a quantidade ao estoque da nova variação.
-                if (typeof v?.estoque === "number") {
-                  setQuantidade((q) => Math.min(Math.max(1, q), Math.max(1, v.estoque)));
-                }
+                // Ajusta a quantidade à disponibilidade real da nova variação.
+                const disp = disponivelDaVariacao(v);
+                setQuantidade((q) => Math.min(Math.max(1, q), Math.max(1, disp)));
               }}
             />
           )}

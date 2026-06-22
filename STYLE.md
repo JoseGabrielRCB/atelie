@@ -79,6 +79,14 @@ Os formulários do cliente (encomenda, carrinho, busca) seguem o mesmo princípi
   (mapa de erros por campo), com a mensagem **inline em vermelho** sob cada campo E um **resumo** no
   topo — nunca um erro de cada vez. Erros do backend também são mapeados. `noValidate` no `<form>`.
 - **Prazo (date):** calendário nativo com `min`=hoje e `max`≈1 ano à frente.
+- **Finalizar compra (carrinho → pagamento):** o botão "Finalizar compra" é **primário**
+  (`acento-escuro`, texto branco) — o WhatsApp (`sucesso`) fica **só** na Encomenda, não no
+  carrinho. O form do carrinho coleta Nome (≤80) e Contato (≤100) e valida **todos** os campos de
+  uma vez (inline em vermelho), depois redireciona ao checkout hospedado do Mercado Pago. As
+  **páginas de retorno** (`/pagamento/sucesso|pendente|falha`) são telas centradas com um ícone
+  lucide grande (`CheckCircle2`/`sucesso`, `Clock`/`acento`, `XCircle`/`erro`), título Cormorant,
+  texto `texto-suave` e CTA primário; nunca afirmam pagamento aprovado por conta dos query params
+  (a confirmação é via webhook).
 
 ## Sem "glitch" em filtros/busca
 
@@ -211,4 +219,9 @@ Mesma identidade, porém **mais utilitário**: foco em tabelas e formulários cl
 - 20/06/2026 — Marca aplicada: logo (`logo-atelie.png`) como favicon e no header do cliente e do admin; bloco de apresentação na home (`apresentacao-atelie.jpg`) com "Ateliê ++ / Costura sob medida". Cards de peça ganharam borda de destaque. Assets reais ficam em `frontend/public/` (o dono adiciona).
 - 21/06/2026 — Padrão de **exclusão com aviso** (componente `ConfirmarExclusao`: lista agrupada do que será removido + total + confirmação reforçada em cascata) e **seleção em massa** nas tabelas do admin (checkbox por linha + "todos", barra de ação, progresso e falha parcial).
 - 21/06/2026 — Entradas do **cliente** (formulários públicos): **chips de tamanho** (seleção única + "+ Outro"), **sufixo "cm" fixo + stepper +/−** nas medidas, **máscara de telefone** `(67) 99999-9999`, **auto-capitalização** do nome, **contadores de caracteres** (nome 80 / descrição 600 / observação 300 / busca 60, espelhando o backend) e **validação completa** na encomenda (todos os erros de uma vez, inline + resumo).
+- 21/06/2026 — **Pagamento online** no cliente: o carrinho finaliza com **"Finalizar compra"**
+  (botão primário `acento-escuro`, não mais WhatsApp — o `sucesso` do WhatsApp fica só na
+  Encomenda) → checkout do Mercado Pago. Três telas de **retorno** (`/pagamento/sucesso|pendente|
+  falha`) centradas, com ícone lucide grande + CTA primário; não afirmam aprovação por query param
+  (confirmação = webhook). Catálogo usa `disponivel` (estoque real) para "Esgotado" e limites.
 - 21/06/2026 — Padrões novos do painel: **paleta de cores** para variações (`SeletorCor` + seção `/admin/cores`, picker `react-colorful`, persiste `cor`+`cor_hex`); **máscara de moeda BRL** com teto R$ 1.000.000 (`CampoPreco`); **contadores de caracteres** (nome 80 / descrição 600); **validação completa** (todos os erros de uma vez, inline + resumo); **olho = só leitura** vs **lápis = editar**; **gráficos do Dashboard** (`recharts`) com a paleta dos tokens (admin-only, fora do SSG).

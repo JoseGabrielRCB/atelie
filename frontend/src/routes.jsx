@@ -6,6 +6,9 @@ import Vitrine from "./pages/Vitrine.jsx";
 import DetalhePeca from "./pages/DetalhePeca.jsx";
 import Carrinho from "./pages/Carrinho.jsx";
 import Encomenda from "./pages/Encomenda.jsx";
+import PagamentoSucesso from "./pages/pagamento/Sucesso.jsx";
+import PagamentoPendente from "./pages/pagamento/Pendente.jsx";
+import PagamentoFalha from "./pages/pagamento/Falha.jsx";
 // Admin
 import AdminLayout from "./components/admin/AdminLayout.jsx";
 import RotaProtegida from "./components/admin/RotaProtegida.jsx";
@@ -30,6 +33,10 @@ export default function AppRoutes() {
         <Route path="peca/:id" element={<DetalhePeca />} />
         <Route path="carrinho" element={<Carrinho />} />
         <Route path="encomenda" element={<Encomenda />} />
+        {/* Retornos do Mercado Pago — dependem de query params (só CSR, fora do SSG). */}
+        <Route path="pagamento/sucesso" element={<PagamentoSucesso />} />
+        <Route path="pagamento/pendente" element={<PagamentoPendente />} />
+        <Route path="pagamento/falha" element={<PagamentoFalha />} />
       </Route>
 
       {/* Login do admin (sem layout do painel) */}

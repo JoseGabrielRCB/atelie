@@ -7,9 +7,9 @@
 
 Dois lados no **mesmo** projeto Vite:
 
-- **Área do cliente** (`/`, `/peca/:id`, `/carrinho`) — site público, **sem login** e **sem
-  pagamento**. O cliente navega a vitrine, monta um pedido e finaliza no **WhatsApp** (a venda
-  não é processada no sistema).
+- **Área do cliente** (`/`, `/peca/:id`, `/carrinho`) — site público, **sem login**. O cliente
+  navega a vitrine, monta um pedido e **paga online** (Mercado Pago, checkout hospedado). A
+  **encomenda sob medida** (`/encomenda`) continua finalizando no **WhatsApp** (não muda).
 - **Painel do admin** (`/admin/*`) — gestão de **catálogo e estoque** por uma conta única,
   protegido por **login JWT**. **Não** há tela de venda/pedido/financeiro (fora de escopo):
   os pedidos chegam pelo WhatsApp.
@@ -96,6 +96,7 @@ frontend/
     │       └── NovaCategoriaModal.jsx # form de NOVA categoria no modal
     └── pages/
         ├── Home.jsx (landing /, 8 seções), Vitrine.jsx (/vitrine), DetalhePeca.jsx, Carrinho.jsx, Encomenda.jsx   # cliente
+        ├── pagamento/  # retornos do Mercado Pago: Sucesso.jsx, Pendente.jsx, Falha.jsx (CSR, fora do SSG)
         └── admin/
             ├── Login.jsx, Dashboard.jsx, PecasLista.jsx,
             └── Estoque.jsx, Categorias.jsx, Cores.jsx, Destaques.jsx, Encomendas.jsx
@@ -108,7 +109,10 @@ frontend/
 | `/`           | `Home`         | **Landing/SEO** (única `<h1>`). 8 seções (copys de `COPYS_HOME.md`): Hero + 2 CTAs + microcopy; **Peças em destaque** (`?destaque=true`, fallback às recentes, reusa `PecaCard`); Sobre (foto `apresentacao-atelie.jpg`, `loading="lazy"`); O que oferecemos; Como funciona (4 passos); Depoimentos; FAQ; CTA final. Textos lidos de `config/site.js`. Pré-renderizada (SSG) com JSON-LD LocalBusiness + FAQPage. |
 | `/vitrine`    | `Vitrine`      | Catálogo (`<h1>` "Vitrine"). Grade responsiva (2 cols mobile → 4 desktop). Busca por nome (**máx. 60**, debounce 350ms → `?search=`), filtro por categoria (`?categoria=`), ordenação `-criado_em`. Selo "Esgotado" quando todas as variações estão esgotadas. Estados: skeleton / erro / vazio. CTA de encomenda no rodapé da página. Pré-renderizada (SSG). |
 | `/peca/:id`   | `DetalhePeca`  | Galeria (`Galeria` — carretel: imagem grande + setas anterior/próxima circulando da principal à última + miniaturas clicáveis com contador "i/total"), nome, preço, descrição. `SeletorVariacao` (esgotadas desabilitadas; **se só houver 1 variação disponível, vem pré-selecionada**), quantidade (**travada até escolher tamanho/cor** quando há várias), **subtotal dinâmico (preço × quantidade)**, "Adicionar ao pedido" com feedback. Peça `sob_medida` sem variações: adiciona sem variação. |
-| `/carrinho`   | `Carrinho`     | Lista de itens (ajustar/remover, com **subtotal por linha**), **total dinâmico do pedido** (preço × quantidade somado), observação livre (**máx. 300 com contador ao vivo**), "Enviar pedido pelo WhatsApp". Vazio: CTA para a vitrine. |
+| `/carrinho`   | `Carrinho`     | Lista de itens (ajustar/remover, com **subtotal por linha**), **total dinâmico do pedido**, e form **"Finalizar compra"** (Nome máx. 80, Contato máx. 100; valida ambos de uma vez, PT-BR). No submit chama `criarCheckout` → redireciona ao **Mercado Pago** (`init_point`). Itens **sob medida** (sem `variacaoId`) não vão ao pagamento — aviso suave apontando para a Encomenda. **Não** limpa o carrinho aqui (só o `/pagamento/sucesso` limpa). 409 mostra a mensagem de disponibilidade; outros erros, mensagem clara. Vazio: CTA para a vitrine. |
+| `/pagamento/sucesso`  | `pagamento/Sucesso`  | Retorno do MP (auto_return) após aprovação: "Pagamento aprovado!". **Limpa o carrinho** e linka à vitrine. Lê `external_reference` (= pedido_id) só para exibir. (CSR, fora do SSG.) |
+| `/pagamento/pendente` | `pagamento/Pendente` | Pagamento em processamento (ex.: Pix). Explica que será contatado; **não** limpa o carrinho. (CSR, fora do SSG.) |
+| `/pagamento/falha`    | `pagamento/Falha`    | Pagamento falhou/cancelado; "Voltar ao carrinho / Tentar de novo". **Não** limpa o carrinho. (CSR, fora do SSG.) |
 | `/encomenda`  | `Encomenda`    | Formulário de **encomenda sob medida** com entradas restritas (menos cliques): **Nome** (máx. 80, auto-capitaliza palavras), **Contato** (máscara de telefone BR `(67) 99999-9999`, 10/11 dígitos), **Descrição** (máx. 600 + contador ao vivo), **Tamanho** em **chips** de seleção única (P · M · G · GG · Único + chip "+ Outro" que revela texto livre), **Medidas** Busto/Cintura/Quadril/Comprimento (numéricas, sufixo fixo "cm", stepper +/−, faixa 20–250, opcionais), **prazo** (opcional, `min`=hoje e `max`≈1 ano) e imagens de referência (múltiplas, pré-visualização/remover, máx. 5 / 5 MB / jpg-png-webp). Tamanho+medidas são compostos em `tamanho_medidas` (ex.: "Tamanho: M; Busto: 90 cm"). **Validação mostra TODOS os erros de uma vez** (mapa por campo, inline + resumo no topo) e mapeia erros do backend. `POST` multipart para `/api/encomendas/`. Confirmação com "enviar outra"/"voltar" e botão opcional de aviso no WhatsApp. Entradas: banner na vitrine + link no header. |
 
 ### Admin (`/admin/*`, protegido por JWT)
@@ -138,6 +142,18 @@ frontend/
 - **Cores (paleta)**: `listarCores()` (público, percorre paginação → array `{id,nome,hex}`),
   `criarCor`/`atualizarCor`/`excluirCor` (auth). A variação envia `cor` (nome) **e** `cor_hex`
   (hex) ao escolher uma cor salva. O `VariacaoSerializer` retorna `cor_hex`.
+- **Checkout (pagamento online)**: `criarCheckout({nome, contato, itens})` faz `POST /checkout/`
+  **público** (sem auth; servidor recomputa preços). `itens` = `[{variacao_id, quantidade}]`
+  só dos itens com variação. Sucesso 201 `{pedido_id, init_point}` → `window.location.href =
+  init_point` (checkout hospedado do MP). `back_urls`: `/pagamento/sucesso|pendente|falha`
+  (o MP anexa `?status=&external_reference=<pedido_id>&…` no retorno — a confirmação real é por
+  webhook; as páginas só dão UX). Erros: 400 por campo, 409 `{disponibilidade}` (estoque
+  insuficiente), 502 `{detalhe}`, 429 throttle.
+- **Disponibilidade**: `VariacaoSerializer` retorna `disponivel` (estoque − reservas ativas,
+  nunca negativo). O catálogo usa `disponivel` (não `esgotado`/`estoque`) para o selo "Esgotado"
+  (`disponivel===0`) e para travar o seletor de quantidade; o item entra no carrinho com
+  `estoque: variacao.disponivel`. Helpers em `lib/pecas.js` (`disponivelDaVariacao`,
+  `variacaoIndisponivel`).
 - **Encomendas**: `criarEncomenda()` faz `POST /encomendas/` **público** (multipart, campo
   `imagens` repetido por arquivo) — devolve `{id,status,mensagem}`. Admin: `listarTodasEncomendas()`
   (auth, paginação completa), `obterEncomenda(id)`, `atualizarEncomendaStatus(id, status)` (PATCH
@@ -369,6 +385,18 @@ pré-renderizadas, ex. `/peca/:id` e `/admin/*`, sobem por CSR). Preencher `SITE
   `CASCADE` na categoria e `nome` único, então os forms de peça (`NovaPecaModal`/`EditarPecaModal`)
   avisam **nome duplicado** junto ao campo Nome (via `useAdminPecas`, ignorando a própria peça).
   `lint` (0 erros) e `npm run build` (SSG) ok.
+- **2026-06-21** — **Pagamento online** (checkout Mercado Pago, Subagente B): o `/carrinho`
+  deixou de finalizar pelo WhatsApp e passou a ter um form **"Finalizar compra"** (Nome ≤80,
+  Contato ≤100, validação completa PT-BR) que chama `criarCheckout` (`POST /checkout/`, público)
+  e redireciona ao `init_point` do MP; itens **sob medida** (sem `variacaoId`) ficam de fora com
+  aviso para a Encomenda; 409 mostra a disponibilidade. Não limpa o carrinho aqui. Três rotas de
+  **retorno** sob o layout do cliente (CSR, **fora do `ROTAS_SSG`**): `/pagamento/sucesso`
+  (limpa o carrinho), `/pagamento/pendente` e `/pagamento/falha` — leem `external_reference`/
+  `status` só para a cópia (confirmação real = webhook). Catálogo passou a usar **`disponivel`**
+  (estoque − reservas) no selo "Esgotado", no cap do seletor e no `estoque` do item do carrinho
+  (`lib/pecas.js`: `disponivelDaVariacao`/`variacaoIndisponivel`; `SeletorVariacao`/`DetalhePeca`/
+  `PecaCard`). Encomenda e WhatsApp da encomenda **intactos**. `lint` (0 erros) e `npm run build`
+  (SSG) ok.
 - **2026-06-21** — Cores, validação completa, máscaras e gráficos do admin (Subagente B):
   **Cores** — nova seção `/admin/cores` (`pages/admin/Cores.jsx`) + item no `AdminLayout`; CRUD da
   paleta com picker `react-colorful` (instalado, suporta React 19), tabela ordenável e exclusão via
