@@ -10,7 +10,9 @@ from .models import (
     Encomenda,
     EncomendaImagem,
     Imagem,
+    ItemPedido,
     Peca,
+    Pedido,
     Variacao,
 )
 
@@ -65,6 +67,10 @@ class ImagemSerializer(serializers.ModelSerializer):
 
 class VariacaoSerializer(serializers.ModelSerializer):
     esgotado = serializers.BooleanField(read_only=True)
+    # Disponível público = estoque − reservas (pedidos aguardando_pagamento e não
+    # expirados). Nunca negativo. É este campo que o cliente deve usar para
+    # decidir o que pode comprar/quanto; `esgotado` segue refletindo estoque==0.
+    disponivel = serializers.SerializerMethodField()
     # `tamanho` é texto livre: os choices do modelo são só sugestão (ex.: P/M/G),
     # mas a API aceita qualquer valor (ex.: "12", "38", "Único"). Sem essa
     # declaração o DRF geraria um ChoiceField e recusaria tamanhos numéricos.
@@ -86,7 +92,21 @@ class VariacaoSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Variacao
-        fields = ["id", "peca", "tamanho", "cor", "cor_hex", "estoque", "esgotado"]
+        fields = [
+            "id",
+            "peca",
+            "tamanho",
+            "cor",
+            "cor_hex",
+            "estoque",
+            "esgotado",
+            "disponivel",
+        ]
+
+    def get_disponivel(self, obj):
+        from .estoque import disponivel_de
+
+        return disponivel_de(obj)
 
 
 class PecaSerializer(serializers.ModelSerializer):
@@ -242,3 +262,90 @@ class EncomendaCreateSerializer(serializers.ModelSerializer):
                     "Formato de imagem inválido. Use JPG, PNG ou WEBP."
                 )
         return arquivos
+
+
+# --------------------------------------------------------------------------
+# Pagamento online (pedidos de peças prontas via Mercado Pago)
+# --------------------------------------------------------------------------
+
+# Quantidade máxima por item, para evitar valores absurdos no checkout.
+MAX_QTD_ITEM = 1000
+
+
+class ItemCheckoutSerializer(serializers.Serializer):
+    """Item enviado pelo cliente no checkout (apenas referência + quantidade).
+
+    O preço NUNCA vem do cliente: é recalculado no servidor a partir do banco.
+    """
+
+    variacao_id = serializers.IntegerField(min_value=1)
+    quantidade = serializers.IntegerField(
+        min_value=1,
+        max_value=MAX_QTD_ITEM,
+        error_messages={"min_value": "A quantidade deve ser pelo menos 1."},
+    )
+
+
+class CheckoutSerializer(serializers.Serializer):
+    """Entrada do endpoint público de checkout."""
+
+    nome = serializers.CharField(
+        max_length=80,
+        error_messages={
+            "blank": "Informe o seu nome.",
+            "required": "Informe o seu nome.",
+        },
+    )
+    contato = serializers.CharField(
+        max_length=100,
+        error_messages={
+            "blank": "Informe um contato (telefone/WhatsApp).",
+            "required": "Informe um contato (telefone/WhatsApp).",
+        },
+    )
+    itens = ItemCheckoutSerializer(many=True)
+
+    def validate_itens(self, itens):
+        if not itens:
+            raise serializers.ValidationError("Adicione pelo menos um item ao pedido.")
+        return itens
+
+
+class ItemPedidoSerializer(serializers.ModelSerializer):
+    """Leitura de item de pedido (admin)."""
+
+    variacao_descricao = serializers.CharField(source="variacao.__str__", read_only=True)
+    peca_nome = serializers.CharField(source="variacao.peca.nome", read_only=True)
+
+    class Meta:
+        model = ItemPedido
+        fields = [
+            "id",
+            "variacao",
+            "variacao_descricao",
+            "peca_nome",
+            "quantidade",
+            "preco_unit",
+        ]
+
+
+class PedidoSerializer(serializers.ModelSerializer):
+    """Leitura de pedidos (admin): inclui os itens aninhados."""
+
+    itens = ItemPedidoSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Pedido
+        fields = [
+            "id",
+            "nome",
+            "contato",
+            "status",
+            "total",
+            "mp_preference_id",
+            "mp_payment_id",
+            "criado_em",
+            "expira_em",
+            "itens",
+        ]
+        read_only_fields = fields

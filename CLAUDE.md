@@ -101,6 +101,24 @@ Propriedade `esgotado` → `estoque == 0`.
 **EncomendaImagem** — `encomenda` (FK→Encomenda, `CASCADE`, related_name `imagens`), `arquivo`
 (ImageField, `upload_to="encomendas/"`). São as imagens de referência anexadas pelo cliente.
 
+**Pedido** — compra online de **peças prontas** paga via Mercado Pago (Checkout Pro). `nome`
+(`max_length=80`), `contato` (`max_length=100`), `status` (choices: `aguardando_pagamento`
+(default) | `pago` | `expirado` | `cancelado`), `total` (Decimal 10,2 — calculado no servidor),
+`mp_preference_id` (blank), `mp_payment_id` (blank), `criado_em` (auto_now_add), `expira_em`
+(DateTimeField — `criado_em + 30 min`). ordering `-criado_em`. NÃO confundir com Encomenda
+(fluxo sob medida via WhatsApp, intacto).
+
+**ItemPedido** — `pedido` (FK→Pedido, `CASCADE`, related_name `itens`), `variacao`
+(FK→Variacao, **`on_delete=PROTECT`** para preservar o histórico financeiro), `quantidade`
+(PositiveInteger, `MinValueValidator(1)`), `preco_unit` (Decimal 10,2 — preço travado no momento
+da compra, lido do banco). **Implicação do PROTECT**: como Variacao/Peca/Categoria usam CASCADE
+entre si, excluir uma Peca/Categoria cuja variação esteja referenciada por algum ItemPedido será
+**bloqueado** (`ProtectedError`) — intencional, para não perder o histórico de compras pagas.
+
+**EventoPagamento** — `evento_id` (CharField **único** — id do pagamento/data.id do MP, para
+idempotência do webhook), `criado_em` (auto_now_add). Garante que a mesma notificação não
+decremente o estoque duas vezes.
+
 ### Regras de negócio
 
 1. Variação com `estoque == 0` é sinalizada com `esgotado: true` na API.
@@ -130,6 +148,21 @@ Propriedade `esgotado` → `estoque == 0`.
     peça e da encomenda `max_length=600`; nome de peça/encomenda `max_length=80`; contato `max_length=100`.
 12. **Cor** (`/api/cores/`) é a paleta reutilizável: `hex` deve ser `#RRGGBB` ("Use uma cor no formato
     #RRGGBB."). A `Variacao` guarda `cor` (nome) + `cor_hex` para o swatch público; `cor` segue texto livre.
+13. **Disponibilidade (anti-oversell)**: o disponível público de uma variação = `Variacao.estoque`
+    − soma das `ItemPedido.quantidade` de pedidos `aguardando_pagamento` **e** `expira_em > agora`.
+    Calculado em `catalogo/estoque.py` (`disponibilidade(variacoes)` / `disponivel_de(v)`), exposto no
+    `VariacaoSerializer` como `disponivel` (int, nunca negativo). O campo `esgotado` continua refletindo
+    `estoque == 0` (não considera reservas) — o frontend deve usar **`disponivel`** para decidir compra.
+14. **Pagamento só de peças prontas**: o checkout valida que cada variação pertence a uma peça
+    `ativo == True` e `tipo == pronta`. O fluxo de **Encomenda** (sob medida, WhatsApp) é intocado.
+15. **Preço/total no servidor**: o checkout SEMPRE recalcula `preco_unit`/`total` a partir de
+    `Variacao.peca.preco` no banco; qualquer valor de preço/total enviado pelo cliente é ignorado.
+16. **Estoque só decrementa após pagamento aprovado** (webhook), dentro de `transaction.atomic()`
+    com `select_for_update()` nas variações e idempotência por `EventoPagamento`. Nunca fica negativo:
+    se o estoque acabou na hora da confirmação (corrida), o pedido é marcado `cancelado`.
+17. **Checkout hospedado (PCI)**: o cliente paga na página do Mercado Pago. Nenhum dado de cartão
+    passa por nós nem é armazenado. Segredos (`MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET`) só em env;
+    nunca logados; dados do cliente do Pedido (`nome`/`contato`) e do pagamento não são logados.
 
 ## API
 
@@ -152,6 +185,22 @@ Base: `/api/`. Respostas de lista são **paginadas** (`PageNumberPagination`, `P
   Status inicial sempre `recebido`. Resposta `201`: `{ "id", "status", "mensagem" }` (NÃO ecoa
   nome/contato). Erros `400` com chaves por campo em PT-BR (ex.: `{ "imagens": ["..."] }`).
   Anti-spam: throttle com escopo `encomendas` (`10/hour`) só nessa ação → `429` se exceder.
+- `POST /api/checkout/` — **público** (`AllowAny`): cria um `Pedido` de peças prontas + a
+  preferência de pagamento no Mercado Pago. Body JSON: `{ "nome", "contato", "itens": [{
+  "variacao_id", "quantidade" }, ...] }`. Valida peça ativa/pronta, quantidade ≥ 1 e
+  disponibilidade; recalcula preço/total no servidor; cria o pedido `aguardando_pagamento`
+  (`expira_em = agora + 30min`) **sem** decrementar estoque. Resposta `201`:
+  `{ "pedido_id", "init_point" }` (URL de checkout do MP para redirecionar). Erros:
+  `400 {"itens": [...]}` (variação inexistente / peça sob_medida ou inativa), `400 {"nome"|"contato"|"itens": [...]}`
+  (campos), `409 {"disponibilidade": ["Estoque insuficiente..."]}`, `502 {"detalhe": [...]}`
+  (falha ao falar com o MP). Throttle escopo `encomendas` (`10/hour`).
+  `back_urls` apontam para o frontend: `/pagamento/sucesso`, `/pagamento/pendente`,
+  `/pagamento/falha` (o MP anexa query params `?status=&payment_id=&external_reference=&...`).
+- `POST /api/webhooks/mercadopago/` — **público** (`AllowAny`, CSRF-exempt): recebe notificações
+  `payment` do Mercado Pago. Valida a assinatura HMAC (`x-signature` + `x-request-id` +
+  `MP_WEBHOOK_SECRET`) → `401` se inválida. Idempotente via `EventoPagamento`. Confirma o
+  pagamento no MP; se `approved`, decrementa estoque (lock + nunca negativo) e marca o Pedido
+  `pago`. Sempre `200` para duplicatas/já processados. Dispara o signal `compra_paga`.
 
 ### Admin (exigem JWT — escrita bloqueada por `IsAuthenticatedOrReadOnly`)
 
@@ -160,6 +209,10 @@ Base: `/api/`. Respostas de lista são **paginadas** (`PageNumberPagination`, `P
   filtro `?status=`), `GET /api/encomendas/{id}/`, `PATCH /api/encomendas/{id}/` (atualiza
   `status`), `DELETE /api/encomendas/{id}/`. Permissão por ação (`get_permissions`: `create` =
   `AllowAny`; demais = `IsAuthenticated`). O viewset aceita multipart (create) e JSON (PATCH).
+- **Pedidos** (`IsAuthenticated`, somente leitura): `GET /api/pedidos/` (lista paginada, itens
+  aninhados, filtro `?status=`), `GET /api/pedidos/{id}/`. Campos: `id`, `nome`, `contato`,
+  `status`, `total`, `mp_preference_id`, `mp_payment_id`, `criado_em`, `expira_em`, `itens`
+  (`[{ id, variacao, variacao_descricao, peca_nome, quantidade, preco_unit }]`). Anônimo → `401`.
 - `POST /api/auth/login/` — body `{ "username", "password" }` → `{ "access", "refresh" }`.
 - `POST /api/auth/refresh/` — body `{ "refresh" }` → `{ "access" }`.
 
@@ -200,8 +253,21 @@ python -m pytest                                      # testes
 ### Variáveis de ambiente (`.env`)
 
 `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`,
-`DB_PORT`, `CORS_ALLOWED_ORIGINS`. Opcionais para o compose: `DJANGO_SUPERUSER_USERNAME/
-EMAIL/PASSWORD`, `VITE_API_URL`, `VITE_WHATSAPP`. Veja `.env.example`.
+`DB_PORT`, `CORS_ALLOWED_ORIGINS`. **Pagamento (Mercado Pago)**: `MP_ACCESS_TOKEN` (token do
+servidor), `MP_WEBHOOK_SECRET` (assinatura do webhook), `MP_PUBLIC_URL` (base HTTPS pública do
+backend p/ `notification_url`; em dev use um túnel tipo ngrok), `FRONTEND_URL` (base do frontend
+p/ as `back_urls`). Defaults dev-safe (token/segredo vazios; URLs `localhost`). Opcionais para o
+compose: `DJANGO_SUPERUSER_USERNAME/EMAIL/PASSWORD`, `VITE_API_URL`, `VITE_WHATSAPP`. Veja
+`.env.example`.
+
+### Expiração de pedidos e signal
+
+- Comando `python manage.py expirar_pedidos`: marca pedidos `aguardando_pagamento` com
+  `expira_em <= agora` como `expirado` (libera a disponibilidade). Rode periodicamente via
+  cron/scheduler (ex.: a cada 5 min: `*/5 * * * * python manage.py expirar_pedidos`; no compose:
+  `docker compose exec backend python manage.py expirar_pedidos`).
+- Signal `catalogo.signals.compra_paga` (`django.dispatch.Signal`): disparado após confirmar um
+  pagamento. Args: `sender=Pedido`, `pedido=<Pedido>`. Um futuro bot de WhatsApp se inscreve nele.
 
 > No compose, o serviço `backend` sobrescreve `DB_HOST=db` (nome do serviço do Postgres na
 > rede do Docker). O `django-environ` lê o `.env` sem sobrescrever vars já definidas pelo
@@ -270,3 +336,17 @@ EMAIL/PASSWORD`, `VITE_API_URL`, `VITE_WHATSAPP`. Veja `.env.example`.
   `Encomenda.nome` 150→**80**; `PecaSerializer` valida **preço** entre `0` e `1000000.00`
   ("O preço não pode ser negativo." / "Preço acima do permitido."). Novo `test_validacoes.py`
   (6 testes). Suíte: **38 testes passando**.
+- **2026-06-21** — Pagamento online (Mercado Pago / Checkout Pro) só para **peças prontas**
+  (migration `0006`): novos models **`Pedido`**, **`ItemPedido`** (FK `variacao` `PROTECT`) e
+  **`EventoPagamento`** (idempotência do webhook). Camada fina `catalogo/pagamentos.py` (toda a
+  SDK do MP isolada: `criar_preferencia`, `consultar_pagamento`, `assinatura_valida`; import
+  tardio; testes fazem monkeypatch). `catalogo/estoque.py` calcula **disponibilidade** (estoque −
+  reservas de pedidos pendentes não expirados) exposta como `disponivel` no `VariacaoSerializer`
+  (`esgotado` mantido como `estoque==0`). Endpoints: `POST /api/checkout/` (público, recalcula
+  preço no servidor, cria pedido `aguardando_pagamento` + preferência MP, `201 {pedido_id,
+  init_point}`, `409` se sem estoque), `POST /api/webhooks/mercadopago/` (público/CSRF-exempt,
+  valida HMAC → `401`, idempotente, decrementa estoque com `select_for_update` só se `approved`,
+  dispara signal `compra_paga`), `GET /api/pedidos/` (admin, leitura, itens aninhados). Comando
+  `expirar_pedidos`. Novas envs `MP_ACCESS_TOKEN`/`MP_WEBHOOK_SECRET`/`MP_PUBLIC_URL`/`FRONTEND_URL`.
+  Dependência `mercadopago==3.2.0` (instalada no container; **rode `docker compose build backend`**
+  para persistir na imagem). Novo `test_pagamentos.py` (15 testes). Suíte: **53 testes passando**.

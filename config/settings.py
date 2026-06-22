@@ -160,3 +160,16 @@ SIMPLE_JWT = {
 # CORS — apenas a(s) origem(ns) do frontend
 # --------------------------------------------------------------------------
 CORS_ALLOWED_ORIGINS = env("CORS_ALLOWED_ORIGINS")
+
+# --------------------------------------------------------------------------
+# Pagamento online — Mercado Pago (Checkout Pro)
+# Segredos SOMENTE via ambiente; nunca no código, nunca logados.
+# --------------------------------------------------------------------------
+# Access token do Mercado Pago (servidor). Vazio em dev/testes.
+MP_ACCESS_TOKEN = env("MP_ACCESS_TOKEN", default="")
+# Segredo para validar a assinatura HMAC do webhook.
+MP_WEBHOOK_SECRET = env("MP_WEBHOOK_SECRET", default="")
+# Base HTTPS pública do backend (para notification_url do webhook).
+MP_PUBLIC_URL = env("MP_PUBLIC_URL", default="http://localhost:8000")
+# Base do frontend (para as back_urls de sucesso/pendente/falha).
+FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:5173")

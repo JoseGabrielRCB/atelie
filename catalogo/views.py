@@ -4,22 +4,49 @@ Leitura é pública; escrita exige JWT de admin (IsAuthenticatedOrReadOnly,
 definido como permissão padrão no settings).
 """
 
+from decimal import Decimal
+
+from django.conf import settings
+from django.db import transaction
+from django.utils import timezone
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_exempt
 from rest_framework import serializers, status, viewsets
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.views import APIView
 
-from .models import Categoria, Cor, Encomenda, EncomendaImagem, Imagem, Peca, Variacao
+from . import pagamentos
+from .estoque import disponibilidade
+from .models import (
+    Categoria,
+    Cor,
+    Encomenda,
+    EncomendaImagem,
+    EventoPagamento,
+    Imagem,
+    ItemPedido,
+    Peca,
+    Pedido,
+    Variacao,
+)
 from .serializers import (
     CategoriaSerializer,
+    CheckoutSerializer,
     CorSerializer,
     EncomendaCreateSerializer,
     EncomendaSerializer,
     ImagemSerializer,
     PecaSerializer,
+    PedidoSerializer,
     VariacaoSerializer,
 )
+from .signals import compra_paga
+
+# Janela de validade do pedido aguardando pagamento.
+PEDIDO_VALIDADE_MINUTOS = 30
 
 
 class CategoriaViewSet(viewsets.ModelViewSet):
@@ -127,3 +154,258 @@ class EncomendaViewSet(viewsets.ModelViewSet):
         # Só PATCH parcial de status é suportado; PUT cai em partial também.
         kwargs["partial"] = True
         return super().update(request, *args, **kwargs)
+
+
+# --------------------------------------------------------------------------
+# Pagamento online (Checkout Pro do Mercado Pago) — só peças PRONTAS
+# --------------------------------------------------------------------------
+
+
+class CheckoutView(APIView):
+    """Cria um Pedido de peças prontas e a preferência de pagamento no MP.
+
+    Público (AllowAny). O preço/total é SEMPRE recalculado no servidor a partir
+    do banco; valores enviados pelo cliente são ignorados. O estoque NÃO é
+    decrementado aqui — só após o pagamento aprovado (webhook). Throttle
+    anti-abuso reaproveita o escopo ``encomendas``.
+    """
+
+    permission_classes = [AllowAny]
+    throttle_scope = "encomendas"
+    throttle_classes = [ScopedRateThrottle]
+
+    def post(self, request, *args, **kwargs):
+        serializer = CheckoutSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        dados = serializer.validated_data
+
+        # Agrega quantidades por variação (caso o cliente repita o id).
+        pedido_por_variacao = {}
+        for item in dados["itens"]:
+            vid = item["variacao_id"]
+            pedido_por_variacao[vid] = pedido_por_variacao.get(vid, 0) + item["quantidade"]
+
+        variacoes = (
+            Variacao.objects.select_related("peca")
+            .filter(id__in=pedido_por_variacao.keys())
+        )
+        por_id = {v.id: v for v in variacoes}
+
+        # Valida existência, peça ativa e do tipo "pronta".
+        for vid in pedido_por_variacao:
+            variacao = por_id.get(vid)
+            if variacao is None:
+                return Response(
+                    {"itens": [f"Variação {vid} não encontrada."]},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if not variacao.peca.ativo or variacao.peca.tipo != Peca.Tipo.PRONTA:
+                return Response(
+                    {"itens": ["Esta peça não está disponível para compra online."]},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        # Checa disponibilidade (estoque − reservas ativas).
+        disp = disponibilidade(por_id.values())
+        for vid, qtd in pedido_por_variacao.items():
+            if qtd > disp.get(vid, 0):
+                return Response(
+                    {
+                        "disponibilidade": [
+                            "Estoque insuficiente para um ou mais itens. "
+                            "Atualize o carrinho e tente novamente."
+                        ]
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+        # Cria o pedido + itens com preço travado do banco.
+        agora = timezone.now()
+        expira_em = agora + timezone.timedelta(minutes=PEDIDO_VALIDADE_MINUTOS)
+        total = Decimal("0.00")
+        itens_mp = []
+
+        with transaction.atomic():
+            pedido = Pedido.objects.create(
+                nome=dados["nome"],
+                contato=dados["contato"],
+                status=Pedido.Status.AGUARDANDO_PAGAMENTO,
+                total=Decimal("0.00"),
+                expira_em=expira_em,
+            )
+            for vid, qtd in pedido_por_variacao.items():
+                variacao = por_id[vid]
+                preco_unit = variacao.peca.preco  # preço do banco, nunca do cliente
+                ItemPedido.objects.create(
+                    pedido=pedido,
+                    variacao=variacao,
+                    quantidade=qtd,
+                    preco_unit=preco_unit,
+                )
+                total += preco_unit * qtd
+                itens_mp.append(
+                    {
+                        "title": variacao.peca.nome,
+                        "quantity": qtd,
+                        "unit_price": float(preco_unit),
+                        "currency_id": "BRL",
+                    }
+                )
+            pedido.total = total
+            pedido.save(update_fields=["total"])
+
+        # Cria a preferência no Mercado Pago (fora da transação de banco).
+        base_url = settings.MP_PUBLIC_URL.rstrip("/")
+        notification_url = f"{base_url}/api/webhooks/mercadopago/"
+        try:
+            resposta = pagamentos.criar_preferencia(
+                pedido,
+                itens_mp,
+                base_url=base_url,
+                frontend_url=settings.FRONTEND_URL,
+                notification_url=notification_url,
+            )
+        except Exception:
+            # Não vaza detalhes do provedor; o pedido fica pendente e expira.
+            return Response(
+                {
+                    "detalhe": [
+                        "Não foi possível iniciar o pagamento agora. Tente novamente."
+                    ]
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        pref_id = resposta.get("id", "")
+        init_point = resposta.get("init_point") or resposta.get("sandbox_init_point") or ""
+        if pref_id:
+            pedido.mp_preference_id = pref_id
+            pedido.save(update_fields=["mp_preference_id"])
+
+        return Response(
+            {"pedido_id": pedido.id, "init_point": init_point},
+            status=status.HTTP_201_CREATED,
+        )
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class WebhookMercadoPagoView(APIView):
+    """Recebe notificações de pagamento do Mercado Pago.
+
+    Público (AllowAny) + CSRF isento. Valida a assinatura HMAC, garante
+    idempotência via EventoPagamento, confirma o pagamento no MP e — só se
+    aprovado — decrementa o estoque dentro de um lock de banco.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request, *args, **kwargs):
+        # O MP manda o id do recurso em query (?data.id=) e/ou no corpo.
+        data_id = (
+            request.query_params.get("data.id")
+            or request.query_params.get("id")
+            or (request.data.get("data", {}) or {}).get("id")
+            or request.data.get("id")
+        )
+        tipo = (
+            request.query_params.get("type")
+            or request.query_params.get("topic")
+            or request.data.get("type")
+            or request.data.get("topic")
+        )
+
+        if not pagamentos.assinatura_valida(request, data_id):
+            return Response(
+                {"detalhe": "Assinatura inválida."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        # Só tratamos notificações de pagamento.
+        if tipo and tipo != "payment":
+            return Response(status=status.HTTP_200_OK)
+
+        if not data_id:
+            return Response(status=status.HTTP_200_OK)
+
+        # Idempotência: evento já processado → 200 e para.
+        if EventoPagamento.objects.filter(evento_id=str(data_id)).exists():
+            return Response(status=status.HTTP_200_OK)
+
+        # Confirma o pagamento no MP.
+        try:
+            pagamento = pagamentos.consultar_pagamento(data_id)
+        except Exception:
+            # Erro ao consultar: não confirma; o MP reenviará a notificação.
+            return Response(status=status.HTTP_200_OK)
+
+        if (pagamento or {}).get("status") != "approved":
+            # Pagamento não aprovado: nada a fazer (não registra evento).
+            return Response(status=status.HTTP_200_OK)
+
+        external_reference = pagamento.get("external_reference")
+        if not external_reference:
+            return Response(status=status.HTTP_200_OK)
+
+        self._confirmar_pedido(external_reference, str(data_id))
+        return Response(status=status.HTTP_200_OK)
+
+    def _confirmar_pedido(self, pedido_id, evento_id):
+        """Decrementa estoque e marca o pedido como pago, com lock + idempotência."""
+        with transaction.atomic():
+            # Idempotência forte dentro da transação: cria o evento primeiro;
+            # se já existir (corrida), aborta sem mexer no estoque.
+            _, criado = EventoPagamento.objects.get_or_create(evento_id=evento_id)
+            if not criado:
+                return
+
+            try:
+                pedido = Pedido.objects.select_for_update().get(pk=pedido_id)
+            except Pedido.DoesNotExist:
+                return
+
+            if pedido.status == Pedido.Status.PAGO:
+                return
+
+            itens = list(pedido.itens.select_related("variacao").all())
+            variacao_ids = [i.variacao_id for i in itens]
+            # Lock nas variações para evitar venda concorrente do último item.
+            travadas = {
+                v.id: v
+                for v in Variacao.objects.select_for_update().filter(id__in=variacao_ids)
+            }
+
+            # Revalida estoque bruto (o decremento nunca pode ser negativo).
+            suficiente = all(
+                travadas[i.variacao_id].estoque >= i.quantidade for i in itens
+            )
+            if not suficiente:
+                # Caso raro: estoque acabou. Cancela o pedido e registra mp_payment_id.
+                pedido.status = Pedido.Status.CANCELADO
+                pedido.mp_payment_id = evento_id
+                pedido.save(update_fields=["status", "mp_payment_id"])
+                return
+
+            for item in itens:
+                variacao = travadas[item.variacao_id]
+                variacao.estoque -= item.quantidade
+                variacao.save(update_fields=["estoque"])
+
+            pedido.status = Pedido.Status.PAGO
+            pedido.mp_payment_id = evento_id
+            pedido.save(update_fields=["status", "mp_payment_id"])
+
+        # Sinal disparado fora da transação (consumidores externos: bot WhatsApp).
+        compra_paga.send(sender=Pedido, pedido=pedido)
+
+
+class PedidoViewSet(viewsets.ReadOnlyModelViewSet):
+    """Listagem/detalhe de pedidos online (somente admin autenticado).
+
+    Inclui itens aninhados e os ids do Mercado Pago. Filtro por ``status``.
+    """
+
+    queryset = Pedido.objects.prefetch_related("itens__variacao__peca").all()
+    serializer_class = PedidoSerializer
+    permission_classes = [IsAuthenticated]
+    filterset_fields = ["status"]

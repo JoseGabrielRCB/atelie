@@ -6,11 +6,14 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from .views import (
     CategoriaViewSet,
+    CheckoutView,
     CorViewSet,
     EncomendaViewSet,
     ImagemViewSet,
     PecaViewSet,
+    PedidoViewSet,
     VariacaoViewSet,
+    WebhookMercadoPagoView,
 )
 
 router = DefaultRouter()
@@ -20,9 +23,16 @@ router.register("pecas", PecaViewSet, basename="peca")
 router.register("variacoes", VariacaoViewSet, basename="variacao")
 router.register("imagens", ImagemViewSet, basename="imagem")
 router.register("encomendas", EncomendaViewSet, basename="encomenda")
+router.register("pedidos", PedidoViewSet, basename="pedido")
 
 urlpatterns = [
     path("auth/login/", TokenObtainPairView.as_view(), name="login"),
     path("auth/refresh/", TokenRefreshView.as_view(), name="refresh"),
+    path("checkout/", CheckoutView.as_view(), name="checkout"),
+    path(
+        "webhooks/mercadopago/",
+        WebhookMercadoPagoView.as_view(),
+        name="webhook-mercadopago",
+    ),
     path("", include(router.urls)),
 ]

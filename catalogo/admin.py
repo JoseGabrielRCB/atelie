@@ -7,8 +7,11 @@ from .models import (
     Cor,
     Encomenda,
     EncomendaImagem,
+    EventoPagamento,
     Imagem,
+    ItemPedido,
     Peca,
+    Pedido,
     Variacao,
 )
 
@@ -73,3 +76,37 @@ class EncomendaAdmin(admin.ModelAdmin):
     list_filter = ["status"]
     search_fields = ["nome", "contato", "descricao"]
     inlines = [EncomendaImagemInline]
+
+
+class ItemPedidoInline(admin.TabularInline):
+    model = ItemPedido
+    extra = 0
+    can_delete = False
+    readonly_fields = ["variacao", "quantidade", "preco_unit"]
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(Pedido)
+class PedidoAdmin(admin.ModelAdmin):
+    list_display = ["id", "nome", "status", "total", "criado_em", "expira_em"]
+    list_filter = ["status"]
+    search_fields = ["nome", "contato", "mp_preference_id", "mp_payment_id"]
+    readonly_fields = [
+        "nome",
+        "contato",
+        "total",
+        "mp_preference_id",
+        "mp_payment_id",
+        "criado_em",
+        "expira_em",
+    ]
+    inlines = [ItemPedidoInline]
+
+
+@admin.register(EventoPagamento)
+class EventoPagamentoAdmin(admin.ModelAdmin):
+    list_display = ["evento_id", "criado_em"]
+    search_fields = ["evento_id"]
+    readonly_fields = ["evento_id", "criado_em"]

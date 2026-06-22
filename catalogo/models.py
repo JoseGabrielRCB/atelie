@@ -227,3 +227,106 @@ class EncomendaImagem(models.Model):
 
     def __str__(self):
         return f"Imagem da encomenda #{self.encomenda_id}"
+
+
+# --------------------------------------------------------------------------
+# Pagamento online (Checkout Pro do Mercado Pago) — somente PEÇAS PRONTAS
+# --------------------------------------------------------------------------
+
+
+class Pedido(models.Model):
+    """Pedido de peças PRONTAS pago online via Mercado Pago (Checkout Pro).
+
+    O cliente paga na página hospedada do Mercado Pago (Pix/cartão). O estoque
+    só é decrementado quando o pagamento é aprovado (via webhook), dentro de um
+    lock de banco com idempotência. Enquanto ``aguardando_pagamento`` e não
+    expirado, o pedido "reserva" o estoque para evitar venda do último item em
+    duplicidade (ver ``disponibilidade``).
+
+    NÃO confundir com Encomenda (fluxo sob medida via WhatsApp, intacto).
+    """
+
+    class Status(models.TextChoices):
+        AGUARDANDO_PAGAMENTO = "aguardando_pagamento", "Aguardando pagamento"
+        PAGO = "pago", "Pago"
+        EXPIRADO = "expirado", "Expirado"
+        CANCELADO = "cancelado", "Cancelado"
+
+    nome = models.CharField("nome", max_length=80)
+    contato = models.CharField("contato", max_length=100)
+    status = models.CharField(
+        "status",
+        max_length=30,
+        choices=Status.choices,
+        default=Status.AGUARDANDO_PAGAMENTO,
+    )
+    total = models.DecimalField("total", max_digits=10, decimal_places=2)
+    mp_preference_id = models.CharField("ID da preferência (MP)", max_length=100, blank=True)
+    mp_payment_id = models.CharField("ID do pagamento (MP)", max_length=100, blank=True)
+    criado_em = models.DateTimeField("criado em", auto_now_add=True)
+    expira_em = models.DateTimeField("expira em")
+
+    class Meta:
+        verbose_name = "pedido"
+        verbose_name_plural = "pedidos"
+        ordering = ["-criado_em"]
+
+    def __str__(self):
+        return f"Pedido #{self.pk} - {self.get_status_display()}"
+
+
+class ItemPedido(models.Model):
+    """Item de um :class:`Pedido` (uma variação + quantidade + preço travado).
+
+    ``variacao`` usa ``on_delete=PROTECT`` para preservar o histórico de
+    compras pagas: uma variação só pode ser excluída se não houver itens de
+    pedido apontando para ela. IMPLICAÇÃO: como Variacao/Peca/Categoria ainda
+    usam CASCADE entre si, excluir uma Peca/Categoria que tenha variações
+    referenciadas por um Pedido será BLOQUEADO pelo PROTECT (ProtectedError) —
+    e isso é intencional para não perder o histórico financeiro.
+    """
+
+    pedido = models.ForeignKey(
+        Pedido,
+        on_delete=models.CASCADE,
+        related_name="itens",
+        verbose_name="pedido",
+    )
+    variacao = models.ForeignKey(
+        Variacao,
+        on_delete=models.PROTECT,
+        related_name="itens_pedido",
+        verbose_name="variação",
+    )
+    quantidade = models.PositiveIntegerField(
+        "quantidade",
+        validators=[MinValueValidator(1, "A quantidade deve ser pelo menos 1.")],
+    )
+    preco_unit = models.DecimalField("preço unitário", max_digits=10, decimal_places=2)
+
+    class Meta:
+        verbose_name = "item do pedido"
+        verbose_name_plural = "itens do pedido"
+        ordering = ["id"]
+
+    def __str__(self):
+        return f"{self.quantidade}x {self.variacao} (Pedido #{self.pedido_id})"
+
+
+class EventoPagamento(models.Model):
+    """Registro de evento de pagamento já processado (idempotência do webhook).
+
+    Garante que uma mesma notificação do Mercado Pago não decremente o estoque
+    mais de uma vez. ``evento_id`` é o identificador do pagamento (data.id).
+    """
+
+    evento_id = models.CharField("ID do evento", max_length=100, unique=True)
+    criado_em = models.DateTimeField("criado em", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "evento de pagamento"
+        verbose_name_plural = "eventos de pagamento"
+        ordering = ["-criado_em"]
+
+    def __str__(self):
+        return f"Evento {self.evento_id}"
