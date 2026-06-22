@@ -14,6 +14,7 @@ from .views import (
     PedidoViewSet,
     VariacaoViewSet,
     WebhookMercadoPagoView,
+    WhatsappWebhookView,
 )
 
 router = DefaultRouter()
@@ -33,6 +34,11 @@ urlpatterns = [
         "webhooks/mercadopago/",
         WebhookMercadoPagoView.as_view(),
         name="webhook-mercadopago",
+    ),
+    path(
+        "webhooks/whatsapp/",
+        WhatsappWebhookView.as_view(),
+        name="webhook-whatsapp",
     ),
     path("", include(router.urls)),
 ]

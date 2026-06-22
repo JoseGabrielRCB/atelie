@@ -120,6 +120,11 @@ entre si, excluir uma Peca/Categoria cuja variação esteja referenciada por alg
 idempotência do webhook), `criado_em` (auto_now_add). Garante que a mesma notificação não
 decremente o estoque duas vezes.
 
+**MensagemWhatsApp** — `mensagem_id` (CharField **único** — `data.key.id` do evento
+`messages.upsert`, para idempotência do webhook de entrada do bot), `criado_em` (auto_now_add).
+Garante que um reenvio da mesma mensagem do dono não ajuste o estoque duas vezes. Registrado no
+Django Admin como read-only (sem botão de adicionar).
+
 ### Regras de negócio
 
 1. Variação com `estoque == 0` é sinalizada com `esgotado: true` na API.
@@ -202,10 +207,22 @@ Base: `/api/`. Respostas de lista são **paginadas** (`PageNumberPagination`, `P
   `MP_WEBHOOK_SECRET`) → `401` se inválida. Idempotente via `EventoPagamento`. Confirma o
   pagamento no MP; se `approved`, decrementa estoque (lock + nunca negativo) e marca o Pedido
   `pago`. Sempre `200` para duplicatas/já processados. Dispara o signal `compra_paga`.
-- `POST /api/webhooks/whatsapp/` — **a implementar (subagente C)**: webhook do bot de WhatsApp
-  do dono (Evolution API). A Evolution está configurada com **webhook global** apontando para
-  esta rota e entrega eventos `messages.upsert` (mensagens recebidas do dono) que o backend
-  processa como comandos. Rota pública/CSRF-exempt; autorização por número (`WHATSAPP_DONO`).
+- `POST /api/webhooks/whatsapp/` — **público** (`AllowAny`, CSRF-exempt, `authentication_classes=[]`):
+  webhook de ENTRADA do bot de WhatsApp do dono (Evolution API, evento `messages.upsert`). Privado
+  de fato por **autorização de remetente**: só processa se o número (de `data.key.remoteJid`, sem o
+  sufixo `@...` e só dígitos) estiver em `settings.WHATSAPP_DONO` — qualquer outro é **ignorado em
+  silêncio** (`200`, sem resposta). Ignora `fromMe: true` e mensagens sem texto. **Idempotência** por
+  `MensagemWhatsApp` (`data.key.id`): reenvio do mesmo id é no-op. O texto (`conversation` ou
+  `extendedTextMessage.text`) é roteado por `catalogo/comandos.interpretar(texto) -> str` e a resposta
+  é enviada via `enviar_whatsapp`. **Sempre** retorna `200` rápido — erro de processamento é engolido
+  (loga falha genérica, sem PII) para a Evolution não reenviar. Espelha `WebhookMercadoPagoView`.
+  Comandos (PT-BR, case-insensitive, tolerante a acento): `estoque <peça>` (lista variações/estoque
+  das peças por `nome icontains`); `baixa <qtd> <peça> <tamanho> <cor>` (subtrai, nunca negativo —
+  recusa se `qtd > estoque`, depois `checar_estoque_baixo`); `repor <qtd> <peça> <tamanho> <cor>`
+  (soma); `ajuda`/desconhecido → texto de ajuda. No baixa/repor o **último token é a cor**, o
+  **penúltimo é o tamanho** e os iniciais o nome da peça (match `nome icontains` + `tamanho iexact` +
+  `cor iexact`); 0 ou >1 variações → pede para ser mais específico (mostra candidatos). Ajustes
+  rodam em `transaction.atomic()` com `select_for_update()`.
 
 ### Admin (exigem JWT — escrita bloqueada por `IsAuthenticatedOrReadOnly`)
 
@@ -423,3 +440,16 @@ valor dispara alerta). Lidos em `settings.py` como `settings.EVOLUTION_URL`/`EVO
   encomenda. Dependência **`requests==2.32.3`** (já na imagem; rebuild persiste). `conftest.py`
   ganhou fixture autouse `_limpar_throttle_cache` (zera cache entre testes p/ throttle não vazar
   `429`). Novo `test_notificacoes.py` (6 testes). Sem migrations. Suíte: **59 testes passando**.
+- **2026-06-22** — **Comandos remotos do dono** (bot de WhatsApp, webhook de ENTRADA). Novo model
+  **`MensagemWhatsApp`** (`mensagem_id` único, migration `0007`) para idempotência (registrado no
+  Django Admin read-only). Novo módulo testável `catalogo/comandos.py` com função pura
+  `interpretar(texto) -> str`: comandos `estoque <peça>`, `baixa <qtd> <peça> <tam> <cor>`,
+  `repor <qtd> <peça> <tam> <cor>` e `ajuda`. Ajustes em `transaction.atomic()` +
+  `select_for_update()`; `baixa` nunca fica negativo (recusa se `qtd > estoque`) e chama
+  `checar_estoque_baixo`. Nova view `WhatsappWebhookView` (APIView, `AllowAny`,
+  `authentication_classes=[]`, CSRF-exempt; espelha `WebhookMercadoPagoView`): só processa
+  `messages.upsert` de remetente em `WHATSAPP_DONO` (autorização por dígitos; outros ignorados em
+  silêncio com `200`), ignora `fromMe`/sem texto, é idempotente por `data.key.id` e SEMPRE devolve
+  `200` (erros engolidos com log genérico, sem PII). Rota `POST /api/webhooks/whatsapp/`. Reusa
+  `enviar_whatsapp`/`checar_estoque_baixo` do subagente B. Novo `test_comandos.py` (12 testes).
+  Suíte: **71 testes passando**.

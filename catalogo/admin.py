@@ -10,6 +10,7 @@ from .models import (
     EventoPagamento,
     Imagem,
     ItemPedido,
+    MensagemWhatsApp,
     Peca,
     Pedido,
     Variacao,
@@ -110,3 +111,13 @@ class EventoPagamentoAdmin(admin.ModelAdmin):
     list_display = ["evento_id", "criado_em"]
     search_fields = ["evento_id"]
     readonly_fields = ["evento_id", "criado_em"]
+
+
+@admin.register(MensagemWhatsApp)
+class MensagemWhatsAppAdmin(admin.ModelAdmin):
+    list_display = ["mensagem_id", "criado_em"]
+    search_fields = ["mensagem_id"]
+    readonly_fields = ["mensagem_id", "criado_em"]
+
+    def has_add_permission(self, request):
+        return False

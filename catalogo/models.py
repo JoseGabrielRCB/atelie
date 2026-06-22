@@ -330,3 +330,22 @@ class EventoPagamento(models.Model):
 
     def __str__(self):
         return f"Evento {self.evento_id}"
+
+
+class MensagemWhatsApp(models.Model):
+    """Registro de mensagem de WhatsApp já processada (idempotência do webhook).
+
+    Garante que um reenvio do mesmo evento ``messages.upsert`` (mesmo
+    ``data.key.id``) seja um no-op — não ajusta estoque duas vezes.
+    """
+
+    mensagem_id = models.CharField("ID da mensagem", max_length=255, unique=True)
+    criado_em = models.DateTimeField("criado em", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "mensagem de WhatsApp"
+        verbose_name_plural = "mensagens de WhatsApp"
+        ordering = ["-criado_em"]
+
+    def __str__(self):
+        return f"Mensagem {self.mensagem_id}"

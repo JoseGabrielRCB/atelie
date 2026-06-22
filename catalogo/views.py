@@ -18,7 +18,10 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
+import logging
+
 from . import pagamentos
+from .comandos import interpretar
 from .estoque import disponibilidade
 from .models import (
     Categoria,
@@ -28,10 +31,12 @@ from .models import (
     EventoPagamento,
     Imagem,
     ItemPedido,
+    MensagemWhatsApp,
     Peca,
     Pedido,
     Variacao,
 )
+from .notificacoes import enviar_whatsapp
 from .serializers import (
     CategoriaSerializer,
     CheckoutSerializer,
@@ -44,6 +49,8 @@ from .serializers import (
     VariacaoSerializer,
 )
 from .signals import compra_paga, encomenda_criada
+
+logger = logging.getLogger(__name__)
 
 # Janela de validade do pedido aguardando pagamento.
 PEDIDO_VALIDADE_MINUTOS = 30
@@ -401,6 +408,77 @@ class WebhookMercadoPagoView(APIView):
 
         # Sinal disparado fora da transação (consumidores externos: bot WhatsApp).
         compra_paga.send(sender=Pedido, pedido=pedido)
+
+
+def _so_digitos(valor) -> str:
+    """Devolve apenas os dígitos de ``valor`` (str)."""
+    return "".join(c for c in str(valor or "") if c.isdigit())
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class WhatsappWebhookView(APIView):
+    """Recebe eventos ``messages.upsert`` da Evolution API (webhook de entrada).
+
+    Privado de fato por autorização de remetente: SÓ processa mensagens cujo
+    número está em ``settings.WHATSAPP_DONO`` (comparação só por dígitos). Outro
+    remetente é IGNORADO em silêncio (200, sem resposta).
+
+    Público para o Django (AllowAny + CSRF isento): a Evolution chama de fora da
+    sessão. Idempotência por ``MensagemWhatsApp`` (``data.key.id``). Erros de
+    processamento NUNCA viram 500 para a Evolution — retornamos 200 e logamos só
+    uma falha genérica (sem PII). Espelha ``WebhookMercadoPagoView``.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request, *args, **kwargs):
+        try:
+            self._processar(request)
+        except Exception:
+            # Nunca devolve 5xx à Evolution (evitaria reenvio infinito); loga
+            # apenas uma falha genérica, sem conteúdo nem números.
+            logger.warning("Falha ao processar webhook de WhatsApp.")
+        return Response(status=status.HTTP_200_OK)
+
+    def _processar(self, request):
+        corpo = request.data if isinstance(request.data, dict) else {}
+        if corpo.get("event") != "messages.upsert":
+            return
+
+        data = corpo.get("data") or {}
+        chave = data.get("key") or {}
+        if chave.get("fromMe"):
+            return
+
+        texto = self._extrair_texto(data.get("message") or {})
+        if not texto:
+            return
+
+        # Autorização: só o(s) dono(s).
+        remetente = _so_digitos((chave.get("remoteJid") or "").split("@")[0])
+        autorizados = {_so_digitos(n) for n in getattr(settings, "WHATSAPP_DONO", [])}
+        if not remetente or remetente not in autorizados:
+            return  # ignora em silêncio
+
+        # Idempotência: mesmo data.key.id → no-op.
+        mensagem_id = chave.get("id")
+        if mensagem_id:
+            _, criado = MensagemWhatsApp.objects.get_or_create(mensagem_id=str(mensagem_id))
+            if not criado:
+                return
+
+        resposta = interpretar(texto)
+        if resposta:
+            enviar_whatsapp(resposta)
+
+    @staticmethod
+    def _extrair_texto(mensagem: dict) -> str:
+        texto = mensagem.get("conversation")
+        if not texto:
+            estendida = mensagem.get("extendedTextMessage") or {}
+            texto = estendida.get("text")
+        return (texto or "").strip()
 
 
 class PedidoViewSet(viewsets.ReadOnlyModelViewSet):
