@@ -9,6 +9,7 @@ const LINKS = [
   { para: "/admin/cores", rotulo: "Cores", fim: false },
   { para: "/admin/destaques", rotulo: "Destaques", fim: false },
   { para: "/admin/encomendas", rotulo: "Encomendas", fim: false },
+  { para: "/admin/vendas", rotulo: "Vendas", fim: false },
 ];
 
 function classeLink({ isActive }) {

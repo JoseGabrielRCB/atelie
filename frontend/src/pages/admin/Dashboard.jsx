@@ -17,6 +17,7 @@ import {
 import { listarCategorias } from "../../lib/api";
 import { useAdminPecas } from "../../hooks/useAdminPecas";
 import { useAdminEncomendas } from "../../hooks/useAdminEncomendas";
+import { useAdminPedidos } from "../../hooks/useAdminPedidos";
 import { responderPergunta } from "../../lib/perguntas";
 import { Carregando, Erro } from "../../components/Estado";
 import { inputClasse } from "../../components/admin/ui";
@@ -73,6 +74,7 @@ export default function Dashboard() {
   const pecasQ = useAdminPecas();
   const catQ = useQuery({ queryKey: ["categorias"], queryFn: listarCategorias });
   const encomendasQ = useAdminEncomendas();
+  const pedidosQ = useAdminPedidos();
 
   const pecas = useMemo(() => pecasQ.data ?? [], [pecasQ.data]);
   const categoriasLista = useMemo(
@@ -80,6 +82,7 @@ export default function Dashboard() {
     [catQ.data]
   );
   const encomendas = useMemo(() => encomendasQ.data ?? [], [encomendasQ.data]);
+  const pedidos = useMemo(() => pedidosQ.data ?? [], [pedidosQ.data]);
 
   // ---- Métricas dos cartões ----
   const ativas = pecas.filter((p) => p.ativo).length;
@@ -91,6 +94,21 @@ export default function Dashboard() {
   const totalCategorias =
     catQ.data?.count ?? categoriasLista.length ?? 0;
   const encomendasNovas = encomendas.filter((e) => e.status === "recebido").length;
+
+  // ---- Métricas de vendas ----
+  const agora = new Date();
+  const vendasPagasMes = pedidos.filter((p) => {
+    if (p.status !== "pago") return false;
+    const d = new Date(p.criado_em);
+    return (
+      !Number.isNaN(d.getTime()) &&
+      d.getFullYear() === agora.getFullYear() &&
+      d.getMonth() === agora.getMonth()
+    );
+  }).length;
+  const pedidosAguardando = pedidos.filter(
+    (p) => p.status === "aguardando_pagamento"
+  ).length;
 
   // ---- Dados dos gráficos ----
   const dadosCategorias = useMemo(() => {
@@ -150,6 +168,20 @@ export default function Dashboard() {
           titulo="Encomendas novas"
           valor={encomendasNovas}
           destaque={encomendasNovas > 0}
+        />
+        <Link
+          to="/admin/vendas"
+          className="rounded-lg border border-borda bg-superficie p-5 transition hover:border-acento-escuro focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-escuro"
+        >
+          <p className="text-sm text-texto-suave">Vendas pagas (mês)</p>
+          <p className="mt-1 font-display text-3xl font-semibold text-texto">
+            {vendasPagasMes}
+          </p>
+        </Link>
+        <Cartao
+          titulo="Pedidos aguardando pagamento"
+          valor={pedidosAguardando}
+          destaque={pedidosAguardando > 0}
         />
       </div>
 

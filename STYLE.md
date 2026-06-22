@@ -127,14 +127,16 @@ Mesma identidade, porém **mais utilitário**: foco em tabelas e formulários cl
 - Reaproveita os mesmos tokens; botões primários em `acento-escuro` (hover `acento-hover`),
   botões secundários com borda `borda`, ação de excluir em `erro` (discreta, com confirmação).
 - Layout próprio (`AdminLayout`): cabeçalho sticky com navegação (Resumo, Peças, Estoque,
-  Categorias, Encomendas) e botão "Sair". O header/carrinho do cliente **não** aparece no admin.
-- Selos de status (Ativa/Oculta, Esgotado, status de encomenda) usando `sucesso`/`esgotado`/`erro`/
-  `acento` em versão suave. Encomendas **novas** (`recebido`) ganham destaque (selo `acento` +
-  linha com leve tom da cor de acento).
+  Categorias, Cores, Destaques, Encomendas, Vendas) e botão "Sair". O header/carrinho do cliente
+  **não** aparece no admin.
+- Selos de status (Ativa/Oculta, Esgotado, status de encomenda, status de venda) usando
+  `sucesso`/`esgotado`/`erro`/`acento` em versão suave. Encomendas **novas** (`recebido`) ganham
+  destaque (selo `acento` + linha com leve tom da cor de acento).
 - Foco visível e labels em todos os campos (acessibilidade). Mobile-first também aqui
   (tabelas com rolagem horizontal quando necessário).
-- Continua **sem** telas de venda/pedido/financeiro — o painel é só catálogo, estoque e
-  **encomendas sob medida** (pedidos do cliente com imagens; o ateliê dá retorno por fora).
+- O painel gere catálogo, estoque, **encomendas sob medida** e — desde o pagamento online — uma
+  seção **Vendas SÓ LEITURA**: lista os pedidos do checkout (Mercado Pago), sem criar/editar/excluir
+  (estorno/cancelamento são feitos no painel do MP).
 
 ### Padrões de componente do painel
 
@@ -186,6 +188,11 @@ Mesma identidade, porém **mais utilitário**: foco em tabelas e formulários cl
 - **Olho = ver, lápis = editar:** o ícone `Eye` abre uma **visualização SÓ LEITURA** (sem inputs;
   `DetalhePecaModal`); a edição fica num ícone `Pencil` separado (`EditarPecaModal`). Não usar o olho
   para abrir o formulário de edição.
+- **Seção só-leitura (Vendas):** os pedidos do pagamento online (Mercado Pago) aparecem numa tabela
+  **ordenável** (Cliente, Itens, Total, Status, Data) com filtro por status e **modal de detalhe**
+  (dados do cliente, total/datas, itens e IDs do MP). É **somente leitura** — sem editar/excluir nem
+  seleção em massa; uma **nota** no modal lembra que estorno/cancelamento são no painel do Mercado
+  Pago. Selos: `pago`→verde, `aguardando_pagamento`→acento, `expirado`→cinza, `cancelado`→vermelho.
 - **Gráficos do painel (Dashboard):** usar `recharts` com a paleta dos tokens (`acento-escuro`
   `#7e4e2e`, `acento` `#b07a56`, `sucesso` `#2e6b49`, `esgotado` `#8c887f`; grade `borda` `#d6cfc4`,
   eixos `texto-suave` `#57534e`). Cartões em `superficie` com borda 8px; "Sem dados ainda." quando
@@ -225,3 +232,4 @@ Mesma identidade, porém **mais utilitário**: foco em tabelas e formulários cl
   falha`) centradas, com ícone lucide grande + CTA primário; não afirmam aprovação por query param
   (confirmação = webhook). Catálogo usa `disponivel` (estoque real) para "Esgotado" e limites.
 - 21/06/2026 — Padrões novos do painel: **paleta de cores** para variações (`SeletorCor` + seção `/admin/cores`, picker `react-colorful`, persiste `cor`+`cor_hex`); **máscara de moeda BRL** com teto R$ 1.000.000 (`CampoPreco`); **contadores de caracteres** (nome 80 / descrição 600); **validação completa** (todos os erros de uma vez, inline + resumo); **olho = só leitura** vs **lápis = editar**; **gráficos do Dashboard** (`recharts`) com a paleta dos tokens (admin-only, fora do SSG).
+- 22/06/2026 — Seção **Vendas** (`/admin/vendas`) só-leitura: tabela ordenável dos pedidos do pagamento online (Mercado Pago) com filtro por status e modal de detalhe (cliente, total/datas, itens, IDs do MP). Sem editar/excluir; nota de que estorno/cancelamento são no painel do MP. Selos `pago`→verde / `aguardando_pagamento`→acento / `expirado`→cinza / `cancelado`→vermelho. Dois cartões de venda no Dashboard. Atualizada a regra antiga "sem telas de venda" do painel.

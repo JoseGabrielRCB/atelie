@@ -362,3 +362,30 @@ export const atualizarEncomendaStatus = (id, status) =>
   request(`/encomendas/${id}/`, { method: "PATCH", body: { status }, auth: true });
 export const excluirEncomenda = (id) =>
   request(`/encomendas/${id}/`, { method: "DELETE", auth: true });
+
+// ----------------------------------------------------------------------------
+// Vendas / Pedidos (pagamento online) — SOMENTE LEITURA (admin)
+// ----------------------------------------------------------------------------
+// Os pedidos são criados pelo checkout público e confirmados por webhook do
+// Mercado Pago. O painel apenas LÊ (não cria/edita/exclui); estorno e
+// cancelamento são feitos no painel do Mercado Pago.
+// Lista TODOS os pedidos percorrendo a paginação. Filtro opcional `?status=`.
+export async function listarTodosPedidos(filtros = {}, { auth = true } = {}) {
+  let url = `/pedidos/${querystring(filtros)}`;
+  const todas = [];
+  let guarda = 0;
+  while (url && guarda < 100) {
+    const pagina = await request(url, { auth });
+    todas.push(...(pagina.results ?? []));
+    if (pagina.next) {
+      const u = new URL(pagina.next);
+      url = u.pathname.replace(/^\/api/, "") + u.search;
+    } else {
+      url = null;
+    }
+    guarda += 1;
+  }
+  return todas;
+}
+
+export const obterPedido = (id) => request(`/pedidos/${id}/`, { auth: true });

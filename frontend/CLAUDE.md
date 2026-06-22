@@ -68,6 +68,7 @@ frontend/
     │   ├── useCategorias.js
     │   ├── useAdminPecas.js # TODAS as peças (auth, paginação completa) p/ o admin
     │   ├── useAdminEncomendas.js # TODAS as encomendas (auth, paginação completa) p/ o admin
+    │   ├── useAdminPedidos.js # TODOS os pedidos/vendas (auth, paginação completa) p/ o admin — só leitura
     │   ├── useCores.js      # paleta de cores salvas (useQuery ["cores"]; listarCores percorre paginação)
     │   ├── useSelecao.js    # seleção de linhas (Set de ids) p/ ações em massa
     │   └── useOrdenacao.js  # estado de ordenação por tabela (persistido) + ordenarPor()
@@ -99,7 +100,7 @@ frontend/
         ├── pagamento/  # retornos do Mercado Pago: Sucesso.jsx, Pendente.jsx, Falha.jsx (CSR, fora do SSG)
         └── admin/
             ├── Login.jsx, Dashboard.jsx, PecasLista.jsx,
-            └── Estoque.jsx, Categorias.jsx, Cores.jsx, Destaques.jsx, Encomendas.jsx
+            └── Estoque.jsx, Categorias.jsx, Cores.jsx, Destaques.jsx, Encomendas.jsx, Vendas.jsx
 ```
 
 ## Telas / rotas
@@ -120,7 +121,7 @@ frontend/
 | Rota                | Componente   | Descrição |
 |---------------------|--------------|-----------|
 | `/admin/login`      | `Login`      | Login (usuário/senha). Fora do layout do painel. Já autenticado → redireciona. |
-| `/admin`            | `Dashboard`  | Cartões (peças, ativas/ocultas, variações, esgotadas, categorias, destaques, encomendas novas) + **3 gráficos `recharts`** (Peças por categoria — barras; Estoque disponíveis × esgotadas — donut; Encomendas por status — barras) derivados das queries existentes + **caixinha de perguntas** em linguagem natural (`lib/perguntas.js`, intenções por palavra-chave, sem API paga). A seção "Atalhos" foi **removida**. |
+| `/admin`            | `Dashboard`  | Cartões (peças, ativas/ocultas, variações, esgotadas, categorias, destaques, encomendas novas, **Vendas pagas no mês** → link p/ `/admin/vendas`, **Pedidos aguardando pagamento**) + **3 gráficos `recharts`** (Peças por categoria — barras; Estoque disponíveis × esgotadas — donut; Encomendas por status — barras) derivados das queries existentes + **caixinha de perguntas** em linguagem natural (`lib/perguntas.js`, intenções por palavra-chave, sem API paga). A seção "Atalhos" foi **removida**. |
 | `/admin/pecas`      | `PecasLista` | Tabela **ordenável** (busca + filtro por categoria), status na vitrine/estoque; "Editar"/"Excluir" (ícones) + atalho de destaque. **Seleção em massa** (checkbox por linha + "todos", barra de ação) e **exclusão com aviso** (`ConfirmarExclusao` lista variações/imagens da peça + "sai dos destaques"; confirmação reforçada por ser cascata). "Nova peça" abre o **modal** (`NovaPecaModal`, `?nova=1`); "Editar" abre `EditarPecaModal` (`?editar=<id>`). Os forms avisam **nome duplicado** junto ao campo Nome (peça é única). |
 | `/admin/pecas/nova` | →redirect    | Redireciona para `/admin/pecas?nova=1` (cadastro em modal). |
 | `/admin/pecas/:id`  | →redirect    | `RedirecionaEdicao` → `/admin/pecas?editar=<id>` (edição em modal). Mantém deep links e o "ver detalhes" das Categorias. |
@@ -129,6 +130,7 @@ frontend/
 | `/admin/cores`      | `Cores`      | CRUD da **paleta de cores** (swatch + nome + hex). "Nova cor"/editar abrem **modal** com picker `react-colorful` (HEX) + nome (máx. 30) + campo hex (`#RRGGBB`). Tabela **ordenável** (`useOrdenacao`). Exclusão via `ConfirmarExclusao`. Erros PT-BR do backend (nome duplicado / hex inválido) exibidos no form. |
 | `/admin/destaques`  | `Destaques`  | Curadoria das **peças em destaque** da Home. Tabela **ordenável** (nome, categoria, preço, status, destaque) com busca por nome e atalho "Só em destaque". Toggle por peça (ícone `Star`/`StarOff`) via PATCH `{destaque}` (`atualizarPeca`) — invalida `["admin","pecas"]` e `["pecas"]`. Contador "N peças em destaque" + lembrete suave acima de 8 (a Home mostra até 8). Aviso "em destaque, mas oculta" quando a peça está em destaque mas `ativo=false`. |
 | `/admin/encomendas` | `Encomendas` | Tabela **ordenável** das encomendas sob medida (cliente, contato **formatado `(DD) NÚMERO`**, prazo, status, data) com destaque das **novas** (`recebido`). **Seleção em massa** + exclusão com aviso (`ConfirmarExclusao` lista as imagens de referência que serão removidas). Detalhe em **modal**: dados, descrição, galeria das imagens (abrem em **popup/lightbox** na própria página, com setas e Esc), seletor de status (PATCH) e excluir (confirmação). |
+| `/admin/vendas`     | `Vendas`     | **Pedidos do pagamento online** (Mercado Pago) — tabela **ordenável** (Cliente, Itens=contagem, Total via `Preco`, Status, Data) com filtro por status no cliente (carga completa via `useAdminPedidos`). Selo: `pago`→verde, `aguardando_pagamento`→acento, `expirado`→cinza, `cancelado`→vermelho. Clique na linha / ícone `Eye` abre **modal** de detalhe: cliente (nome+contato), status, total, criado/expira em, **lista de itens** (`peca_nome`, `variacao_descricao`, qtd, `preco_unit` via `Preco`) e os **IDs do Mercado Pago** (`mp_preference_id`, `mp_payment_id`). **SOMENTE LEITURA**: nota explícita de que estorno/cancelamento são feitos no painel do Mercado Pago — sem ações de editar/excluir. |
 
 ## Como consome a API
 
@@ -159,6 +161,13 @@ frontend/
   (auth, paginação completa), `obterEncomenda(id)`, `atualizarEncomendaStatus(id, status)` (PATCH
   JSON) e `excluirEncomenda(id)`. Erros de validação (incl. limites de imagem) vêm por campo PT-BR
   e o formulário também valida no cliente antes de enviar.
+- **Vendas/Pedidos (só leitura, admin)**: `listarTodosPedidos(filtros, {auth:true})` percorre a
+  paginação de `GET /pedidos/` (filtro `?status=`) e `obterPedido(id)` (`GET /pedidos/{id}/`), ambos
+  com JWT (anônimo → 401). Hook `useAdminPedidos` (chave `["admin","pedidos",filtros]`). Os pedidos
+  são criados pelo checkout público e confirmados por **webhook do Mercado Pago**; o painel **não**
+  cria/edita/exclui (estorno/cancelamento são feitos no painel do MP). Shape: `{id, nome, contato,
+  status, total, mp_preference_id, mp_payment_id, criado_em, expira_em, itens:[{id, variacao,
+  variacao_descricao, peca_nome, quantidade, preco_unit}]}`.
 - **Auth**: `POST /auth/login/` → `{access, refresh}` (em `localStorage`); em `401` o `api.js`
   tenta `POST /auth/refresh/` uma vez; se falhar, limpa tokens e dispara `auth:expirou`
   (o `AuthContext` desloga → guard manda ao login). Tokens nunca vão ao console.
@@ -422,3 +431,12 @@ pré-renderizadas, ex. `/peca/:id` e `/admin/*`, sobem por CSR). Preencher `SITE
   imagem, tela "enviada" e botão do WhatsApp mantidos. **Carrinho** — observação `maxLength 300` +
   contador. **Vitrine** — busca `maxLength 60` (`Filtro.jsx`). Admin intacto.
   `lint` (0 erros) e `npm run build` (SSG) ok.
+- **2026-06-22** — Seção **Vendas** no painel (`/admin/vendas`, `pages/admin/Vendas.jsx`) para
+  acompanhar os **pedidos do pagamento online** (Mercado Pago) — modelada na `Encomendas.jsx`.
+  Tabela **ordenável** (Cliente, Itens, Total via `Preco`, Status, Data) com filtro por status no
+  cliente (carga completa) e **modal de detalhe** (dados do cliente, status/total/datas, lista de
+  itens e os IDs do MP). **Somente leitura** com nota de que estorno/cancelamento são no painel do
+  MP. Novos helpers em `lib/api.js` (`listarTodosPedidos`/`obterPedido`, `GET /pedidos/`, auth),
+  hook `useAdminPedidos`, item "Vendas" no `AdminLayout` e dois cartões no Dashboard ("Vendas pagas
+  no mês" → link p/ Vendas, "Pedidos aguardando pagamento"). `lint` (0 erros, só warnings
+  pré-existentes de react-refresh) e `npm run build` (SSG) ok.
