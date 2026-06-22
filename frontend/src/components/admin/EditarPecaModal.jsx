@@ -1,11 +1,15 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertTriangle } from "lucide-react";
 import { obterPeca, atualizarPeca } from "../../lib/api";
 import { useCategorias } from "../../hooks/useCategorias";
 import { useAdminPecas } from "../../hooks/useAdminPecas";
+import { valorParaCentavos, centavosParaDecimal } from "../../lib/moeda";
+import { validarPeca, resumoErros } from "../../lib/validarPeca";
 import { Carregando, Erro } from "../Estado";
 import VariacoesEditor from "./VariacoesEditor";
 import ImagensEditor from "./ImagensEditor";
+import CampoPreco from "./CampoPreco";
 import { BotaoPrimario, BotaoSecundario, Campo, Feedback, inputClasse } from "./ui";
 
 // Edição de peça DENTRO de um modal (sem tirar o usuário da lista).
@@ -34,11 +38,12 @@ function FormEdicao({ peca, aoFechar }) {
   const [form, setForm] = useState({
     nome: peca.nome ?? "",
     descricao: peca.descricao ?? "",
-    preco: peca.preco ?? "",
+    precoCentavos: valorParaCentavos(peca.preco),
     categoria: peca.categoria ?? "",
     tipo: peca.tipo ?? "pronta",
     ativo: peca.ativo ?? true,
   });
+  const [errosCampo, setErrosCampo] = useState({});
   const [erro, setErro] = useState("");
   const [ok, setOk] = useState("");
 
@@ -65,19 +70,21 @@ function FormEdicao({ peca, aoFechar }) {
     e.preventDefault();
     setErro("");
     setOk("");
-    if (nomeDuplicado) {
-      setErro("Já existe uma peça com esse nome.");
-      return;
-    }
+    // Valida TODOS os campos básicos de uma vez (variações têm editor próprio).
+    const erros = validarPeca(form, [], { nomeDuplicado, validarVariacoes: false });
+    setErrosCampo(erros);
+    if (Object.keys(erros).length > 0) return;
     salvarMut.mutate({
-      nome: form.nome,
+      nome: form.nome.trim(),
       descricao: form.descricao,
-      preco: form.preco,
+      preco: centavosParaDecimal(form.precoCentavos),
       categoria: form.categoria,
       tipo: form.tipo,
       ativo: form.ativo,
     });
   }
+
+  const resumo = resumoErros(errosCampo);
 
   const atualizarCampo = (campo, valor) =>
     setForm((f) => ({ ...f, [campo]: valor }));
@@ -86,7 +93,16 @@ function FormEdicao({ peca, aoFechar }) {
   return (
     <div className="space-y-8">
       {/* ---- Dados básicos ---- */}
-      <form id="editar-peca-basicos" onSubmit={aoEnviar}>
+      <form id="editar-peca-basicos" onSubmit={aoEnviar} noValidate>
+        {resumo && (
+          <div
+            className="mb-4 flex items-start gap-2 rounded-lg border border-erro/30 bg-erro/5 px-4 py-3 text-sm text-texto"
+            role="alert"
+          >
+            <AlertTriangle size={18} aria-hidden="true" className="mt-0.5 shrink-0 text-erro" />
+            <span>{resumo}</span>
+          </div>
+        )}
         <fieldset className="space-y-4" disabled={salvarMut.isPending}>
           <legend className="mb-2 text-sm font-semibold uppercase tracking-wide text-texto-suave">
             Dados básicos
@@ -97,17 +113,22 @@ function FormEdicao({ peca, aoFechar }) {
               id="edit-nome"
               value={form.nome}
               onChange={(e) => atualizarCampo("nome", e.target.value)}
-              required
-              aria-invalid={nomeDuplicado}
+              maxLength={80}
+              aria-invalid={Boolean(errosCampo.nome) || nomeDuplicado}
               className={
-                inputClasse + (nomeDuplicado ? " border-erro focus:ring-erro/30" : "")
+                inputClasse +
+                (errosCampo.nome || nomeDuplicado ? " border-erro focus:ring-erro/30" : "")
               }
             />
-            {nomeDuplicado && (
-              <p className="mt-1 text-xs text-erro" role="alert">
-                Já existe uma peça com esse nome.
-              </p>
-            )}
+            <div className="mt-1 flex items-center justify-between gap-2">
+              <span className="text-xs text-erro" role="alert">
+                {errosCampo.nome ||
+                  (nomeDuplicado ? "Já existe uma peça com esse nome." : "")}
+              </span>
+              <span className="shrink-0 text-xs text-texto-suave">
+                {form.nome.length}/80
+              </span>
+            </div>
           </Campo>
 
           <Campo label="Descrição" htmlFor="edit-descricao">
@@ -116,22 +137,27 @@ function FormEdicao({ peca, aoFechar }) {
               value={form.descricao}
               onChange={(e) => atualizarCampo("descricao", e.target.value)}
               rows={3}
+              maxLength={600}
               className={inputClasse}
             />
+            <div className="mt-1 text-right text-xs text-texto-suave">
+              {form.descricao.length}/600
+            </div>
           </Campo>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <Campo label="Preço (R$)" htmlFor="edit-preco">
-              <input
+              <CampoPreco
                 id="edit-preco"
-                type="number"
-                step="0.01"
-                min="0"
-                value={form.preco}
-                onChange={(e) => atualizarCampo("preco", e.target.value)}
-                required
-                className={inputClasse}
+                centavos={form.precoCentavos}
+                aoMudar={(c) => atualizarCampo("precoCentavos", c)}
+                invalido={Boolean(errosCampo.preco)}
               />
+              {errosCampo.preco && (
+                <p className="mt-1 text-xs text-erro" role="alert">
+                  {errosCampo.preco}
+                </p>
+              )}
             </Campo>
 
             <Campo label="Categoria" htmlFor="edit-categoria">
@@ -139,8 +165,10 @@ function FormEdicao({ peca, aoFechar }) {
                 id="edit-categoria"
                 value={form.categoria}
                 onChange={(e) => atualizarCampo("categoria", e.target.value)}
-                required
-                className={inputClasse}
+                aria-invalid={Boolean(errosCampo.categoria)}
+                className={
+                  inputClasse + (errosCampo.categoria ? " border-erro focus:ring-erro/30" : "")
+                }
               >
                 <option value="">Selecione...</option>
                 {categorias.map((c) => (
@@ -149,6 +177,11 @@ function FormEdicao({ peca, aoFechar }) {
                   </option>
                 ))}
               </select>
+              {errosCampo.categoria && (
+                <p className="mt-1 text-xs text-erro" role="alert">
+                  {errosCampo.categoria}
+                </p>
+              )}
             </Campo>
           </div>
 

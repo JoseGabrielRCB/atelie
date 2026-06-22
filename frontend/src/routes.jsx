@@ -15,6 +15,7 @@ import PecasLista from "./pages/admin/PecasLista.jsx";
 import RedirecionaEdicao from "./components/admin/RedirecionaEdicao.jsx";
 import Estoque from "./pages/admin/Estoque.jsx";
 import Categorias from "./pages/admin/Categorias.jsx";
+import Cores from "./pages/admin/Cores.jsx";
 import Destaques from "./pages/admin/Destaques.jsx";
 import Encomendas from "./pages/admin/Encomendas.jsx";
 
@@ -49,6 +50,7 @@ export default function AppRoutes() {
         <Route path="pecas/:id" element={<RedirecionaEdicao />} />
         <Route path="estoque" element={<Estoque />} />
         <Route path="categorias" element={<Categorias />} />
+        <Route path="cores" element={<Cores />} />
         <Route path="destaques" element={<Destaques />} />
         <Route path="encomendas" element={<Encomendas />} />
       </Route>

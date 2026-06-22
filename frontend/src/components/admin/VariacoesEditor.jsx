@@ -5,15 +5,17 @@ import {
   atualizarVariacao,
   excluirVariacao,
 } from "../../lib/api";
-import { BotaoPrimario, BotaoPerigo, Feedback, inputClasse } from "./ui";
+import SeletorCor from "./SeletorCor";
+import { BotaoPrimario, BotaoPerigo, Campo, Feedback, inputClasse } from "./ui";
 
 const TAMANHOS = ["P", "M", "G", "GG", "Único"];
 
 // Editor de variações (tamanho/cor/estoque) de uma peça pronta.
+// A cor usa a paleta salva (SeletorCor) e persiste `cor` + `cor_hex`.
 export default function VariacoesEditor({ peca }) {
   const qc = useQueryClient();
   const [erro, setErro] = useState("");
-  const [nova, setNova] = useState({ tamanho: "", cor: "", estoque: 0 });
+  const [nova, setNova] = useState({ tamanho: "", cor: "", corHex: "", estoque: 0 });
 
   const invalidar = () => {
     qc.invalidateQueries({ queryKey: ["admin", "peca", String(peca.id)] });
@@ -23,7 +25,7 @@ export default function VariacoesEditor({ peca }) {
   const criarMut = useMutation({
     mutationFn: criarVariacao,
     onSuccess: () => {
-      setNova({ tamanho: "", cor: "", estoque: 0 });
+      setNova({ tamanho: "", cor: "", corHex: "", estoque: 0 });
       invalidar();
     },
     onError: (e) => setErro(e.message),
@@ -44,14 +46,15 @@ export default function VariacoesEditor({ peca }) {
   function adicionar() {
     setErro("");
     const estoque = Number(nova.estoque);
-    if (estoque < 0 || Number.isNaN(estoque)) {
-      setErro("O estoque não pode ser negativo.");
+    if (estoque < 0 || Number.isNaN(estoque) || !Number.isInteger(estoque)) {
+      setErro("O estoque deve ser um número inteiro maior ou igual a 0.");
       return;
     }
     criarMut.mutate({
       peca: peca.id,
       tamanho: nova.tamanho,
       cor: nova.cor,
+      cor_hex: nova.corHex ?? "",
       estoque,
     });
   }
@@ -71,7 +74,7 @@ export default function VariacoesEditor({ peca }) {
         </div>
       )}
 
-      <div className="space-y-2">
+      <div className="space-y-3">
         {variacoes.map((v) => (
           <LinhaVariacao
             key={v.id}
@@ -94,43 +97,54 @@ export default function VariacoesEditor({ peca }) {
 
       {/* Nova variação */}
       <div className="mt-4 border-t border-borda pt-4">
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-[1fr_1fr_100px_auto]">
-          <input
-            list="tamanhos-sugeridos"
-            value={nova.tamanho}
-            onChange={(e) => setNova((n) => ({ ...n, tamanho: e.target.value }))}
-            placeholder="Tamanho"
-            aria-label="Tamanho da nova variação"
-            className={inputClasse}
-          />
-          <datalist id="tamanhos-sugeridos">
-            {TAMANHOS.map((t) => (
-              <option key={t} value={t} />
-            ))}
-          </datalist>
-          <input
-            value={nova.cor}
-            onChange={(e) => setNova((n) => ({ ...n, cor: e.target.value }))}
-            placeholder="Cor"
-            aria-label="Cor da nova variação"
-            className={inputClasse}
-          />
-          <input
-            type="number"
-            min="0"
-            value={nova.estoque}
-            onChange={(e) => setNova((n) => ({ ...n, estoque: e.target.value }))}
-            placeholder="Estoque"
-            aria-label="Estoque da nova variação"
-            className={inputClasse}
-          />
-          <BotaoPrimario
-            type="button"
-            onClick={adicionar}
-            disabled={criarMut.isPending}
-          >
-            Adicionar
-          </BotaoPrimario>
+        <p className="mb-2 text-sm font-medium text-texto">Adicionar variação</p>
+        <div className="grid grid-cols-1 gap-3 rounded-lg border border-borda bg-fundo p-3 sm:grid-cols-[1fr_1fr_7rem_auto] sm:items-start">
+          <Campo label="Tamanho" htmlFor="nova-var-tam">
+            <input
+              id="nova-var-tam"
+              list="tamanhos-sugeridos"
+              value={nova.tamanho}
+              onChange={(e) => setNova((n) => ({ ...n, tamanho: e.target.value }))}
+              placeholder="Tamanho"
+              className={inputClasse}
+            />
+            <datalist id="tamanhos-sugeridos">
+              {TAMANHOS.map((t) => (
+                <option key={t} value={t} />
+              ))}
+            </datalist>
+          </Campo>
+          <Campo label="Cor" htmlFor="nova-var-cor">
+            <SeletorCor
+              id="nova-var-cor"
+              cor={nova.cor}
+              corHex={nova.corHex}
+              aoSelecionar={(nome, hex) =>
+                setNova((n) => ({ ...n, cor: nome, corHex: hex }))
+              }
+            />
+          </Campo>
+          <Campo label="Estoque" htmlFor="nova-var-est">
+            <input
+              id="nova-var-est"
+              type="number"
+              min="0"
+              step="1"
+              value={nova.estoque}
+              onChange={(e) => setNova((n) => ({ ...n, estoque: e.target.value }))}
+              placeholder="Estoque"
+              className={inputClasse}
+            />
+          </Campo>
+          <div className="sm:pt-6">
+            <BotaoPrimario
+              type="button"
+              onClick={adicionar}
+              disabled={criarMut.isPending}
+            >
+              Adicionar
+            </BotaoPrimario>
+          </div>
         </div>
       </div>
     </div>
@@ -140,48 +154,65 @@ export default function VariacoesEditor({ peca }) {
 function LinhaVariacao({ variacao, onSalvar, onRemover, salvando }) {
   const [tamanho, setTamanho] = useState(variacao.tamanho);
   const [cor, setCor] = useState(variacao.cor);
+  const [corHex, setCorHex] = useState(variacao.cor_hex ?? "");
   const [estoque, setEstoque] = useState(variacao.estoque);
 
   const mudou =
     tamanho !== variacao.tamanho ||
     cor !== variacao.cor ||
+    (corHex ?? "") !== (variacao.cor_hex ?? "") ||
     Number(estoque) !== variacao.estoque;
 
   return (
-    <div className="grid grid-cols-2 items-center gap-2 sm:grid-cols-[1fr_1fr_100px_auto_auto]">
-      <input
-        value={tamanho}
-        onChange={(e) => setTamanho(e.target.value)}
-        aria-label="Tamanho"
-        className={inputClasse}
-      />
-      <input
-        value={cor}
-        onChange={(e) => setCor(e.target.value)}
-        aria-label="Cor"
-        className={inputClasse}
-      />
-      <input
-        type="number"
-        min="0"
-        value={estoque}
-        onChange={(e) => setEstoque(e.target.value)}
-        aria-label="Estoque"
-        className={
-          inputClasse + (variacao.esgotado ? " border-erro/60 text-erro" : "")
-        }
-      />
-      <button
-        type="button"
-        disabled={!mudou || salvando}
-        onClick={() => onSalvar({ tamanho, cor, estoque: Number(estoque) })}
-        className="rounded-lg border border-borda px-3 py-2 text-sm text-texto transition hover:border-acento-escuro disabled:opacity-40"
-      >
-        Salvar
-      </button>
-      <BotaoPerigo type="button" onClick={onRemover}>
-        Remover
-      </BotaoPerigo>
+    <div className="grid grid-cols-1 gap-3 rounded-lg border border-borda bg-fundo p-3 sm:grid-cols-[1fr_1fr_7rem_auto_auto] sm:items-start">
+      <Campo label="Tamanho" htmlFor={`var-tam-${variacao.id}`}>
+        <input
+          id={`var-tam-${variacao.id}`}
+          value={tamanho}
+          onChange={(e) => setTamanho(e.target.value)}
+          className={inputClasse}
+        />
+      </Campo>
+      <Campo label="Cor" htmlFor={`var-cor-${variacao.id}`}>
+        <SeletorCor
+          id={`var-cor-${variacao.id}`}
+          cor={cor}
+          corHex={corHex}
+          aoSelecionar={(nome, hex) => {
+            setCor(nome);
+            setCorHex(hex);
+          }}
+        />
+      </Campo>
+      <Campo label="Estoque" htmlFor={`var-est-${variacao.id}`}>
+        <input
+          id={`var-est-${variacao.id}`}
+          type="number"
+          min="0"
+          value={estoque}
+          onChange={(e) => setEstoque(e.target.value)}
+          className={
+            inputClasse + (variacao.esgotado ? " border-erro/60 text-erro" : "")
+          }
+        />
+      </Campo>
+      <div className="sm:pt-6">
+        <button
+          type="button"
+          disabled={!mudou || salvando}
+          onClick={() =>
+            onSalvar({ tamanho, cor, cor_hex: corHex ?? "", estoque: Number(estoque) })
+          }
+          className="w-full rounded-lg border border-borda px-3 py-2 text-sm text-texto transition hover:border-acento-escuro disabled:opacity-40"
+        >
+          Salvar
+        </button>
+      </div>
+      <div className="sm:pt-6">
+        <BotaoPerigo type="button" onClick={onRemover}>
+          Remover
+        </BotaoPerigo>
+      </div>
     </div>
   );
 }

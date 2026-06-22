@@ -37,6 +37,8 @@ export const tokens = {
 const ROTULOS_CAMPO = {
   tamanho: "Tamanho",
   cor: "Cor",
+  cor_hex: "Cor",
+  hex: "Cor (hex)",
   estoque: "Estoque",
   peca: "Peça",
   nome: "Nome",
@@ -202,6 +204,41 @@ export async function listarTodasPecas(filtros = {}, { auth = false } = {}) {
   }
   return todas;
 }
+
+// ----------------------------------------------------------------------------
+// Cores (paleta salva) — leitura pública, escrita autenticada (admin)
+// ----------------------------------------------------------------------------
+// Lista TODAS as cores percorrendo a paginação (volume pequeno).
+export async function listarCores() {
+  let url = "/cores/";
+  const todas = [];
+  let guarda = 0;
+  while (url && guarda < 100) {
+    const pagina = await request(url);
+    // A resposta pode vir paginada ({results}) ou como array.
+    if (Array.isArray(pagina)) {
+      todas.push(...pagina);
+      url = null;
+    } else {
+      todas.push(...(pagina.results ?? []));
+      if (pagina.next) {
+        const u = new URL(pagina.next);
+        url = u.pathname.replace(/^\/api/, "") + u.search;
+      } else {
+        url = null;
+      }
+    }
+    guarda += 1;
+  }
+  return todas;
+}
+
+export const criarCor = (dados) =>
+  request("/cores/", { method: "POST", body: dados, auth: true });
+export const atualizarCor = (id, dados) =>
+  request(`/cores/${id}/`, { method: "PATCH", body: dados, auth: true });
+export const excluirCor = (id) =>
+  request(`/cores/${id}/`, { method: "DELETE", auth: true });
 
 // ----------------------------------------------------------------------------
 // Autenticação

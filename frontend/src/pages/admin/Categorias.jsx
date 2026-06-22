@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Eye, Plus, Trash2 } from "lucide-react";
+import { Eye, Pencil, Plus, Trash2 } from "lucide-react";
 import { useCategorias } from "../../hooks/useCategorias";
 import { useAdminPecas } from "../../hooks/useAdminPecas";
 import { useOrdenacao, ordenarPor } from "../../hooks/useOrdenacao";
@@ -9,6 +9,7 @@ import { CabecalhoOrdenavel } from "../../components/admin/CabecalhoOrdenavel";
 import NovaCategoriaModal from "../../components/admin/NovaCategoriaModal";
 import Modal from "../../components/admin/Modal";
 import EditarPecaModal from "../../components/admin/EditarPecaModal";
+import DetalhePecaModal from "../../components/admin/DetalhePecaModal";
 import ConfirmarExclusao from "../../components/admin/ConfirmarExclusao";
 import { CaixaTodos, CaixaLinha, BarraSelecao } from "../../components/admin/Selecao";
 import { descreverPeca, resumoTotais } from "../../lib/exclusao";
@@ -69,8 +70,9 @@ export default function Categorias() {
   const [erro, setErro] = useState("");
   const [ok, setOk] = useState("");
   const [modalAberto, setModalAberto] = useState(false);
-  // Peça aberta para edição no modal (sem sair da tela de Categorias).
-  const [pecaDetalheId, setPecaDetalheId] = useState(null);
+  // Peça aberta em VISUALIZAÇÃO (olho, só leitura) ou em EDIÇÃO (lápis).
+  const [pecaVerId, setPecaVerId] = useState(null);
+  const [pecaEditarId, setPecaEditarId] = useState(null);
   // Pedido de exclusão atual (single ou em massa) para o modal de confirmação.
   const [exclusao, setExclusao] = useState(null);
 
@@ -302,11 +304,19 @@ export default function Categorias() {
                       <div className="flex items-center justify-end gap-2">
                         <button
                           type="button"
-                          onClick={() => setPecaDetalheId(p.id)}
+                          onClick={() => setPecaVerId(p.id)}
                           aria-label={`Ver detalhes de ${p.nome}`}
                           className="inline-flex items-center justify-center rounded-lg border border-borda p-1.5 text-texto-suave transition hover:border-acento-escuro hover:text-acento-escuro focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-escuro"
                         >
                           <Eye size={18} aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPecaEditarId(p.id)}
+                          aria-label={`Editar ${p.nome}`}
+                          className="inline-flex items-center justify-center rounded-lg border border-borda p-1.5 text-texto-suave transition hover:border-acento-escuro hover:text-acento-escuro focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-escuro"
+                        >
+                          <Pencil size={18} aria-hidden="true" />
                         </button>
                         <button
                           type="button"
@@ -334,16 +344,27 @@ export default function Categorias() {
         aoFechar={() => setModalAberto(false)}
       />
 
+      {/* Olho: visualização só leitura. */}
       <Modal
-        aberto={Boolean(pecaDetalheId)}
-        aoFechar={() => setPecaDetalheId(null)}
+        aberto={Boolean(pecaVerId)}
+        aoFechar={() => setPecaVerId(null)}
+        titulo="Detalhes da peça"
+        tamanho="xl"
+      >
+        {pecaVerId && <DetalhePecaModal pecaId={pecaVerId} />}
+      </Modal>
+
+      {/* Lápis: edição. */}
+      <Modal
+        aberto={Boolean(pecaEditarId)}
+        aoFechar={() => setPecaEditarId(null)}
         titulo="Editar peça"
         tamanho="xl"
       >
-        {pecaDetalheId && (
+        {pecaEditarId && (
           <EditarPecaModal
-            pecaId={pecaDetalheId}
-            aoFechar={() => setPecaDetalheId(null)}
+            pecaId={pecaEditarId}
+            aoFechar={() => setPecaEditarId(null)}
           />
         )}
       </Modal>

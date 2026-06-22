@@ -54,9 +54,13 @@ frontend/
     │   ├── meta.js         # getMeta(rota), buildHead() e JSON-LD (LocalBusiness/FAQPage); ROTAS_SSG
     │   └── useSeo.js        # useSeo() (title/description no SPA) + useJsonLd() (Product na peça)
     ├── lib/
-    │   ├── api.js          # HTTP: leitura pública + escrita autenticada; tokens; refresh; erros PT-BR
+    │   ├── api.js          # HTTP: leitura pública + escrita autenticada; tokens; refresh; erros PT-BR (inclui cores)
     │   ├── whatsapp.js     # montarMensagem() + linkWhatsapp() (encodeURIComponent)
     │   ├── pecas.js        # imagemPrincipal(), pecaEsgotada(), variacoesDisponiveis()
+    │   ├── cores.js        # HEX_REGEX, hexValido(), normalizarHex(), corDeTextoSobre()
+    │   ├── moeda.js        # máscara BRL: centavos⇄texto, formatarCentavos(), centavosParaDecimal(), TETO_PRECO
+    │   ├── validarPeca.js  # validação COMPLETA (acumula todos os erros por campo) + resumoErros()
+    │   ├── perguntas.js    # "caixinha de perguntas" do Dashboard (intenções por palavra-chave, sem API paga)
     │   └── exclusao.js     # helpers do aviso de exclusão: plural(), descreverPeca(), resumoTotais()
     ├── hooks/
     │   ├── usePecas.js     # vitrine pública (keepPreviousData)
@@ -64,6 +68,7 @@ frontend/
     │   ├── useCategorias.js
     │   ├── useAdminPecas.js # TODAS as peças (auth, paginação completa) p/ o admin
     │   ├── useAdminEncomendas.js # TODAS as encomendas (auth, paginação completa) p/ o admin
+    │   ├── useCores.js      # paleta de cores salvas (useQuery ["cores"]; listarCores percorre paginação)
     │   ├── useSelecao.js    # seleção de linhas (Set de ids) p/ ações em massa
     │   └── useOrdenacao.js  # estado de ordenação por tabela (persistido) + ordenarPor()
     ├── context/
@@ -79,6 +84,9 @@ frontend/
     │       ├── Modal.jsx             # modal acessível reutilizável (foco preso, Esc, clique fora, portal)
     │       ├── CabecalhoOrdenavel.jsx # <th> clicável (seta), usa useOrdenacao
     │       ├── Selecao.jsx           # CaixaTodos/CaixaLinha (checkboxes) + BarraSelecao (ação em massa)
+    │       ├── SeletorCor.jsx        # seletor de cor c/ paleta salva (swatches) + "Nova cor" (react-colorful) → POST /cores/
+    │       ├── CampoPreco.jsx        # input de preço com máscara BRL (centavos), prefixo R$, teto 1.000.000
+    │       ├── DetalhePecaModal.jsx  # visualização SÓ LEITURA da peça (acionada pelo ícone "olho")
     │       ├── ConfirmarExclusao.jsx # modal: lista agrupada do que será removido + total + confirmação reforçada; executa DELETE por id com progresso/falha parcial
     │       ├── VariacoesEditor.jsx   # CRUD de variações (usado na edição da peça)
     │       ├── ImagensEditor.jsx     # upload (multipart) / principal / remover (na edição)
@@ -90,7 +98,7 @@ frontend/
         ├── Home.jsx (landing /, 8 seções), Vitrine.jsx (/vitrine), DetalhePeca.jsx, Carrinho.jsx, Encomenda.jsx   # cliente
         └── admin/
             ├── Login.jsx, Dashboard.jsx, PecasLista.jsx,
-            └── Estoque.jsx, Categorias.jsx, Destaques.jsx, Encomendas.jsx
+            └── Estoque.jsx, Categorias.jsx, Cores.jsx, Destaques.jsx, Encomendas.jsx
 ```
 
 ## Telas / rotas
@@ -108,12 +116,13 @@ frontend/
 | Rota                | Componente   | Descrição |
 |---------------------|--------------|-----------|
 | `/admin/login`      | `Login`      | Login (usuário/senha). Fora do layout do painel. Já autenticado → redireciona. |
-| `/admin`            | `Dashboard`  | Cartões: total de peças, ativas/ocultas, variações, esgotadas, categorias + atalhos (o "+ Nova peça" leva a `/admin/pecas?nova=1`). |
+| `/admin`            | `Dashboard`  | Cartões (peças, ativas/ocultas, variações, esgotadas, categorias, destaques, encomendas novas) + **3 gráficos `recharts`** (Peças por categoria — barras; Estoque disponíveis × esgotadas — donut; Encomendas por status — barras) derivados das queries existentes + **caixinha de perguntas** em linguagem natural (`lib/perguntas.js`, intenções por palavra-chave, sem API paga). A seção "Atalhos" foi **removida**. |
 | `/admin/pecas`      | `PecasLista` | Tabela **ordenável** (busca + filtro por categoria), status na vitrine/estoque; "Editar"/"Excluir" (ícones) + atalho de destaque. **Seleção em massa** (checkbox por linha + "todos", barra de ação) e **exclusão com aviso** (`ConfirmarExclusao` lista variações/imagens da peça + "sai dos destaques"; confirmação reforçada por ser cascata). "Nova peça" abre o **modal** (`NovaPecaModal`, `?nova=1`); "Editar" abre `EditarPecaModal` (`?editar=<id>`). Os forms avisam **nome duplicado** junto ao campo Nome (peça é única). |
 | `/admin/pecas/nova` | →redirect    | Redireciona para `/admin/pecas?nova=1` (cadastro em modal). |
 | `/admin/pecas/:id`  | →redirect    | `RedirecionaEdicao` → `/admin/pecas?editar=<id>` (edição em modal). Mantém deep links e o "ver detalhes" das Categorias. |
 | `/admin/estoque`    | `Estoque`    | Tabela **ordenável** de variações; edição por linha com ícone, botões +1/−1 e número manual (nunca < 0); salva via PATCH; destaque/filtro de esgotadas; busca. **Excluir variação** (lixeira) e **seleção em massa** com aviso (`ConfirmarExclusao`). |
-| `/admin/categorias` | `Categorias` | CRUD de categorias (inputs de largura fixa padronizada; "Nova categoria" em **modal**) + controle da vitrine (tabela ordenável com Mostrar/Ocultar e link "ver detalhes" da peça). **Excluir categoria** (única ou em massa) abre `ConfirmarExclusao` listando as **peças que cairão em cascata** (e suas variações/imagens); confirmação reforçada (digitar o nome da categoria / `EXCLUIR`). |
+| `/admin/categorias` | `Categorias` | CRUD de categorias (inputs de largura fixa padronizada; "Nova categoria" em **modal**) + controle da vitrine (tabela ordenável com Mostrar/Ocultar). Cada peça tem **olho** (`Eye` → modal SÓ LEITURA `DetalhePecaModal`) e **lápis** separado (`Pencil` → `EditarPecaModal`). **Excluir categoria** (única ou em massa) abre `ConfirmarExclusao` listando as **peças que cairão em cascata** (e suas variações/imagens); confirmação reforçada (digitar o nome da categoria / `EXCLUIR`). |
+| `/admin/cores`      | `Cores`      | CRUD da **paleta de cores** (swatch + nome + hex). "Nova cor"/editar abrem **modal** com picker `react-colorful` (HEX) + nome (máx. 30) + campo hex (`#RRGGBB`). Tabela **ordenável** (`useOrdenacao`). Exclusão via `ConfirmarExclusao`. Erros PT-BR do backend (nome duplicado / hex inválido) exibidos no form. |
 | `/admin/destaques`  | `Destaques`  | Curadoria das **peças em destaque** da Home. Tabela **ordenável** (nome, categoria, preço, status, destaque) com busca por nome e atalho "Só em destaque". Toggle por peça (ícone `Star`/`StarOff`) via PATCH `{destaque}` (`atualizarPeca`) — invalida `["admin","pecas"]` e `["pecas"]`. Contador "N peças em destaque" + lembrete suave acima de 8 (a Home mostra até 8). Aviso "em destaque, mas oculta" quando a peça está em destaque mas `ativo=false`. |
 | `/admin/encomendas` | `Encomendas` | Tabela **ordenável** das encomendas sob medida (cliente, contato **formatado `(DD) NÚMERO`**, prazo, status, data) com destaque das **novas** (`recebido`). **Seleção em massa** + exclusão com aviso (`ConfirmarExclusao` lista as imagens de referência que serão removidas). Detalhe em **modal**: dados, descrição, galeria das imagens (abrem em **popup/lightbox** na própria página, com setas e Esc), seletor de status (PATCH) e excluir (confirmação). |
 
@@ -126,6 +135,9 @@ frontend/
 - **Admin (escrita autenticada)**: `Authorization: Bearer <access>` em CRUD de
   `pecas`/`variacoes`/`imagens`/`categorias` e na listagem do admin (que assim enxerga peças
   **inativas** — anônimo só vê ativas). Upload de imagem via **multipart** em `POST /imagens/`.
+- **Cores (paleta)**: `listarCores()` (público, percorre paginação → array `{id,nome,hex}`),
+  `criarCor`/`atualizarCor`/`excluirCor` (auth). A variação envia `cor` (nome) **e** `cor_hex`
+  (hex) ao escolher uma cor salva. O `VariacaoSerializer` retorna `cor_hex`.
 - **Encomendas**: `criarEncomenda()` faz `POST /encomendas/` **público** (multipart, campo
   `imagens` repetido por arquivo) — devolve `{id,status,mensagem}`. Admin: `listarTodasEncomendas()`
   (auth, paginação completa), `obterEncomenda(id)`, `atualizarEncomendaStatus(id, status)` (PATCH
@@ -357,3 +369,17 @@ pré-renderizadas, ex. `/peca/:id` e `/admin/*`, sobem por CSR). Preencher `SITE
   `CASCADE` na categoria e `nome` único, então os forms de peça (`NovaPecaModal`/`EditarPecaModal`)
   avisam **nome duplicado** junto ao campo Nome (via `useAdminPecas`, ignorando a própria peça).
   `lint` (0 erros) e `npm run build` (SSG) ok.
+- **2026-06-21** — Cores, validação completa, máscaras e gráficos do admin (Subagente B):
+  **Cores** — nova seção `/admin/cores` (`pages/admin/Cores.jsx`) + item no `AdminLayout`; CRUD da
+  paleta com picker `react-colorful` (instalado, suporta React 19), tabela ordenável e exclusão via
+  `ConfirmarExclusao`. Helpers `lib/api.js` (`listarCores`/`criarCor`/`atualizarCor`/`excluirCor`),
+  hook `useCores`, `lib/cores.js`. Novo `SeletorCor` (swatches da paleta + "Nova cor") usado nas
+  variações do `NovaPecaModal` e do `VariacoesEditor`; a variação persiste `cor` + `cor_hex`.
+  **Validação completa** — `lib/validarPeca.js` acumula TODOS os erros por campo de uma vez
+  (nome/preço/categoria/estoque das variações), exibidos inline + resumo no topo (Nova e Editar peça).
+  **Máscaras/contadores** — `lib/moeda.js` + `CampoPreco` (moeda BRL, teto R$ 1.000.000, envia
+  decimal à API); contadores de caracteres em nome (80) e descrição (600). **Olho = só leitura** —
+  `DetalhePecaModal` (visualização) separado do lápis (edição) em Categorias. **Dashboard** — removida
+  a seção "Atalhos"; 3 gráficos `recharts` (instalado) + caixinha de perguntas (`lib/perguntas.js`,
+  intenções por palavra-chave, sem API paga). `lint` (0 erros) e `npm run build` (SSG) ok — recharts
+  não entra no bundle SSR (só rotas públicas são pré-renderizadas).
