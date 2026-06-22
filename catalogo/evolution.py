@@ -51,12 +51,55 @@ def _extrair_qr(dados: dict) -> dict:
     return {"qr_base64": base64, "pairing_code": pairing}
 
 
+def _classificar_erro(exc=None, status_code=None) -> dict:
+    """Mapeia uma falha para ``{"estado", "mensagem"}`` da UI, sem vazar segredos.
+
+    Loga o status HTTP e uma razão curta (connection refused / timeout / 4xx /
+    5xx) — nunca a apikey, o corpo completo ou o QR.
+    """
+    import requests
+
+    if status_code in (401, 403):
+        logger.warning("Evolution recusou a chave (status %s).", status_code)
+        return {
+            "estado": "nao_autorizado",
+            "mensagem": "Chave da Evolution inválida (EVOLUTION_API_KEY).",
+        }
+    if status_code is not None and status_code >= 500:
+        logger.warning("Evolution respondeu erro interno (status %s).", status_code)
+        return {
+            "estado": "erro_evolution",
+            "mensagem": "Evolution respondeu com erro (possível banco 'evolution' ausente).",
+        }
+    if isinstance(exc, requests.exceptions.Timeout):
+        logger.warning("Timeout ao falar com a Evolution.")
+        return {
+            "estado": "indisponivel",
+            "mensagem": "A Evolution demorou para responder. Verifique o serviço evolution-api.",
+        }
+    if isinstance(exc, requests.exceptions.ConnectionError):
+        logger.warning("Conexão recusada ao falar com a Evolution.")
+        return {
+            "estado": "indisponivel",
+            "mensagem": "Serviço Evolution fora do ar — verifique 'docker compose up evolution-api'.",
+        }
+    logger.warning(
+        "Falha ao falar com a Evolution (status %s).",
+        status_code if status_code is not None else "sem resposta",
+    )
+    return {
+        "estado": "indisponivel",
+        "mensagem": "Não foi possível falar com a Evolution API. Tente novamente em instantes.",
+    }
+
+
 def estado_conexao() -> dict:
     """Consulta o estado da instância. Nunca levanta exceção.
 
-    Retorna ``{"configurado", "estado", "instancia"}`` onde ``estado`` é um de:
-    ``open`` (conectado), ``connecting``, ``close``, ``nao_criada``,
-    ``nao_configurado``, ``indisponivel`` ou ``desconhecido``.
+    Retorna ``{"configurado", "estado", "instancia"}`` (e ``"mensagem"`` quando há
+    falha) onde ``estado`` é um de: ``open`` (conectado), ``connecting``,
+    ``close``, ``nao_criada``, ``nao_configurado``, ``nao_autorizado``,
+    ``erro_evolution``, ``indisponivel`` ou ``desconhecido``.
     """
     instancia = getattr(settings, "EVOLUTION_INSTANCE", "")
     if not _configurado():
@@ -72,14 +115,15 @@ def estado_conexao() -> dict:
         )
         if resposta.status_code == 404:
             return {"configurado": True, "estado": "nao_criada", "instancia": instancia}
-        resposta.raise_for_status()
+        if resposta.status_code >= 400:
+            erro = _classificar_erro(status_code=resposta.status_code)
+            return {"configurado": True, "instancia": instancia, **erro}
         dados = resposta.json()
         estado = (dados.get("instance") or {}).get("state") or dados.get("state") or "desconhecido"
         return {"configurado": True, "estado": estado, "instancia": instancia}
-    except Exception:
-        # Não loga corpo/segredo — só uma falha genérica.
-        logger.warning("Falha ao consultar o estado da Evolution.")
-        return {"configurado": True, "estado": "indisponivel", "instancia": instancia}
+    except Exception as exc:  # noqa: BLE001 — degrada com elegância
+        erro = _classificar_erro(exc=exc)
+        return {"configurado": True, "instancia": instancia, **erro}
 
 
 def _criar_instancia():
@@ -98,35 +142,41 @@ def _criar_instancia():
     )
 
 
+def _resposta_qr(qr: dict) -> dict:
+    return {
+        "estado": "qr",
+        "qr_base64": qr["qr_base64"],
+        "pairing_code": qr["pairing_code"],
+        "mensagem": "Escaneie o QR Code com o WhatsApp do número dedicado.",
+    }
+
+
+def _falha_conectar(estado, mensagem) -> dict:
+    return {"estado": estado, "qr_base64": None, "pairing_code": None, "mensagem": mensagem}
+
+
 def conectar() -> dict:
     """Garante a instância e devolve o QR Code para parear o número.
 
-    Tenta conectar a instância existente; se ela ainda não existe (404), cria.
-    Retorna ``{"estado", "qr_base64", "pairing_code", "mensagem"}``. Em caso de
-    erro/instância indisponível, ``estado`` indica o problema e ``qr_base64`` é
-    ``None`` (a UI mostra a ``mensagem``). Nunca levanta exceção.
+    Tenta conectar a instância existente; se não existe (404), cria. Se o connect
+    vier SEM ``base64`` e SEM ``pairingCode`` (a Evolution às vezes só emite o QR
+    após (re)criar), tenta criar uma vez antes de desistir. Retorna
+    ``{"estado", "qr_base64", "pairing_code", "mensagem"}``; em erro, ``estado``
+    indica o problema e ``qr_base64`` é ``None``. Nunca levanta exceção.
     """
     instancia = getattr(settings, "EVOLUTION_INSTANCE", "")
     if not _configurado():
-        return {
-            "estado": "nao_configurado",
-            "qr_base64": None,
-            "pairing_code": None,
-            "mensagem": "Bot não configurado. Defina EVOLUTION_URL, EVOLUTION_API_KEY e EVOLUTION_INSTANCE no .env.",
-        }
+        return _falha_conectar(
+            "nao_configurado",
+            "Bot não configurado. Defina EVOLUTION_URL, EVOLUTION_API_KEY e EVOLUTION_INSTANCE no .env.",
+        )
 
     import requests
 
     try:
         # Já conectado? Não precisa de QR.
-        estado = estado_conexao().get("estado")
-        if estado == "open":
-            return {
-                "estado": "open",
-                "qr_base64": None,
-                "pairing_code": None,
-                "mensagem": "WhatsApp já está conectado.",
-            }
+        if estado_conexao().get("estado") == "open":
+            return _falha_conectar("open", "WhatsApp já está conectado.")
 
         resposta = requests.get(
             _url(f"/instance/connect/{instancia}"),
@@ -136,29 +186,30 @@ def conectar() -> dict:
         # Instância ainda não existe → cria (a criação já devolve o QR).
         if resposta.status_code == 404:
             resposta = _criar_instancia()
+        if resposta.status_code in (401, 403) or resposta.status_code >= 500:
+            return _falha_conectar(**_classificar_erro(status_code=resposta.status_code))
         resposta.raise_for_status()
+
         qr = _extrair_qr(resposta.json())
-        if not qr["qr_base64"] and not qr["pairing_code"]:
-            return {
-                "estado": "indisponivel",
-                "qr_base64": None,
-                "pairing_code": None,
-                "mensagem": "A Evolution não retornou o QR Code. Tente novamente em instantes.",
-            }
-        return {
-            "estado": "qr",
-            "qr_base64": qr["qr_base64"],
-            "pairing_code": qr["pairing_code"],
-            "mensagem": "Escaneie o QR Code com o WhatsApp do número dedicado.",
-        }
-    except Exception:
-        logger.warning("Falha ao conectar a instância da Evolution.")
-        return {
-            "estado": "indisponivel",
-            "qr_base64": None,
-            "pairing_code": None,
-            "mensagem": "Não foi possível falar com a Evolution API. Verifique se o serviço está no ar.",
-        }
+        if qr["qr_base64"] or qr["pairing_code"]:
+            return _resposta_qr(qr)
+
+        # Sem QR no connect: tenta recriar a instância uma vez (caso comum na v2).
+        logger.info("Connect sem QR; tentando (re)criar a instância da Evolution.")
+        recriar = _criar_instancia()
+        if recriar.status_code in (401, 403) or recriar.status_code >= 500:
+            return _falha_conectar(**_classificar_erro(status_code=recriar.status_code))
+        if recriar.ok:
+            qr = _extrair_qr(recriar.json())
+            if qr["qr_base64"] or qr["pairing_code"]:
+                return _resposta_qr(qr)
+
+        return _falha_conectar(
+            "indisponivel",
+            "A Evolution não retornou o QR Code. Tente novamente em instantes.",
+        )
+    except Exception as exc:  # noqa: BLE001 — degrada com elegância
+        return _falha_conectar(**_classificar_erro(exc=exc))
 
 
 def desconectar() -> dict:

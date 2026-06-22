@@ -79,6 +79,87 @@ def test_conectar_no_op_sem_configuracao(settings):
     assert resultado["qr_base64"] is None
 
 
+class _Resp:
+    """Resposta falsa de requests para testar evolution.py sem rede."""
+
+    def __init__(self, status_code=200, payload=None):
+        self.status_code = status_code
+        self._payload = payload or {}
+
+    @property
+    def ok(self):
+        return self.status_code < 400
+
+    def json(self):
+        return self._payload
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            import requests
+
+            raise requests.exceptions.HTTPError(response=self)
+
+
+@pytest.fixture
+def _config(settings):
+    settings.EVOLUTION_URL = "http://evolution-api:8080"
+    settings.EVOLUTION_API_KEY = "chave"
+    settings.EVOLUTION_INSTANCE = "atelie-bot"
+
+
+def test_estado_chave_invalida(_config, monkeypatch):
+    import requests
+
+    monkeypatch.setattr(requests, "get", lambda *a, **k: _Resp(401))
+    resultado = evolution.estado_conexao()
+    assert resultado["estado"] == "nao_autorizado"
+    assert "EVOLUTION_API_KEY" in resultado["mensagem"]
+
+
+def test_estado_erro_interno_evolution(_config, monkeypatch):
+    import requests
+
+    monkeypatch.setattr(requests, "get", lambda *a, **k: _Resp(500))
+    resultado = evolution.estado_conexao()
+    assert resultado["estado"] == "erro_evolution"
+    assert "evolution" in resultado["mensagem"].lower()
+
+
+def test_estado_conexao_recusada(_config, monkeypatch):
+    import requests
+
+    def _recusa(*a, **k):
+        raise requests.exceptions.ConnectionError()
+
+    monkeypatch.setattr(requests, "get", _recusa)
+    resultado = evolution.estado_conexao()
+    assert resultado["estado"] == "indisponivel"
+    assert "fora do ar" in resultado["mensagem"]
+
+
+def test_conectar_recria_quando_connect_sem_qr(_config, monkeypatch):
+    """connect sem QR → tenta criar a instância e retorna o QR de lá."""
+    import requests
+
+    monkeypatch.setattr(
+        evolution,
+        "estado_conexao",
+        lambda: {"configurado": True, "estado": "close", "instancia": "atelie-bot"},
+    )
+    # /instance/connect responde 200 mas sem base64/pairingCode.
+    monkeypatch.setattr(requests, "get", lambda *a, **k: _Resp(200, {}))
+    # /instance/create devolve o QR aninhado (formato da v2).
+    monkeypatch.setattr(
+        requests,
+        "post",
+        lambda *a, **k: _Resp(200, {"qrcode": {"base64": "data:image/png;base64,ZZZ", "pairingCode": "K9"}}),
+    )
+    resultado = evolution.conectar()
+    assert resultado["estado"] == "qr"
+    assert resultado["qr_base64"].endswith("ZZZ")
+    assert resultado["pairing_code"] == "K9"
+
+
 def test_extrair_qr_normaliza_formatos():
     # QR no topo
     assert evolution._extrair_qr({"base64": "X", "pairingCode": "P"}) == {

@@ -88,6 +88,23 @@ services:
       - atelie_redis:/data
     # Não publica porta no host: só serviços da rede do compose usam o cache.
 
+  # Serviço one-shot: garante o banco "evolution" no Postgres ANTES da Evolution
+  # subir. Roda a cada `up` (não depende do init do volume), então funciona mesmo
+  # quando o pgdata já existia. Sai com código 0 após criar/confirmar o banco.
+  evolution-db-init:
+    image: postgres:16-alpine
+    container_name: atelie_evolution_db_init
+    restart: "no"
+    environment:
+      DB_USER: ${DB_USER:-atelie}
+      DB_PASSWORD: ${DB_PASSWORD:-atelie}
+    entrypoint: ["sh", "/ensure-evolution-db.sh"]
+    volumes:
+      - ./docker/ensure-evolution-db.sh:/ensure-evolution-db.sh:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
   evolution-api:
     image: atendai/evolution-api:v2.1.1
     container_name: atelie_evolution
@@ -125,6 +142,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+      # Só sobe depois que o banco "evolution" estiver garantido.
+      evolution-db-init:
+        condition: service_completed_successfully
 
 volumes:
   atelie_pgdata:

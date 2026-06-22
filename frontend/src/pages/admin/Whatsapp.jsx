@@ -14,6 +14,8 @@ const ESTADOS = {
   nao_criada: { rotulo: "Não conectado", cor: "cinza" },
   desconhecido: { rotulo: "Desconhecido", cor: "neutro" },
   nao_configurado: { rotulo: "Não configurado", cor: "vermelho" },
+  nao_autorizado: { rotulo: "Chave inválida", cor: "vermelho" },
+  erro_evolution: { rotulo: "Erro na Evolution", cor: "vermelho" },
   indisponivel: { rotulo: "Evolution indisponível", cor: "vermelho" },
 };
 

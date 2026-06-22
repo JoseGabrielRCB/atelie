@@ -356,10 +356,13 @@ valor dispara alerta). Lidos em `settings.py` como `settings.EVOLUTION_URL`/`EVO
 - **Bot de WhatsApp (Evolution API)** — serviços `redis` (cache) + `evolution-api`
   (`atendai/evolution-api:v2.1.1`, porta `8080`) **não sobem por padrão**; suba sob demanda:
   `docker compose up redis evolution-api`. A Evolution usa banco PRÓPRIO `evolution` no Postgres
-  `db` (criado por `docker/db-init/01-evolution-db.sh` no 1º init do volume; se o `pgdata` já
-  existia, crie manualmente — ver README), cache no `redis`, e **webhook global** para
-  `/api/webhooks/whatsapp/` no backend. Sessão do WhatsApp persistida no volume
-  `atelie_evolution`. Número **dedicado** (risco de banimento — nunca o principal da loja).
+  `db`, **garantido pelo serviço one-shot `evolution-db-init`** (`docker/ensure-evolution-db.sh`,
+  roda a CADA `up`, idempotente, cria o banco se faltar — funciona mesmo com `pgdata` pré-existente).
+  A `evolution-api` `depends_on` o init (`condition: service_completed_successfully`), o `db`
+  (healthy) e o `redis`. O `docker/db-init/01-evolution-db.sh` (init do volume) continua, mas o
+  sistema **não depende mais só dele**. Cache no `redis`; **webhook global** para
+  `/api/webhooks/whatsapp/` no backend; sessão persistida no volume `atelie_evolution`. Número
+  **dedicado** (risco de banimento — nunca o principal da loja).
 - **Testes com pytest-django** (`pytest.ini` aponta `DJANGO_SETTINGS_MODULE=config.settings`).
 
 ## Histórico de mudanças
@@ -468,3 +471,13 @@ valor dispara alerta). Lidos em `settings.py` como `settings.EVOLUTION_URL`/`EVO
   `POST /api/whatsapp/conectar/`, `POST /api/whatsapp/desconectar/`. O backend guarda a
   `EVOLUTION_API_KEY` — o navegador nunca a recebe. Novo `test_conexao_whatsapp.py` (7 testes,
   Evolution mockada). Sem migrations. Suíte: **78 testes passando**.
+- **2026-06-22** — **Robustez do banco `evolution` + diagnóstico do bot**. Causa-raiz: o banco
+  `evolution` só era criado no 1º init do volume; com `pgdata` pré-existente a Evolution subia
+  quebrada e o QR não vinha. Adicionado serviço one-shot **`evolution-db-init`**
+  (`docker/ensure-evolution-db.sh`, idempotente, roda a cada `up`); `evolution-api` agora
+  `depends_on` ele (`service_completed_successfully`). Em `catalogo/evolution.py`,
+  `_classificar_erro()` mapeia falhas para mensagens claras sem vazar segredos
+  (401/403 → "Chave inválida"; conexão recusada/timeout → "fora do ar"; 5xx → "possível banco
+  ausente") e `conectar()` **recria a instância uma vez** quando o connect vem sem QR. Novos
+  estados: `nao_autorizado`, `erro_evolution`. `test_conexao_whatsapp.py` passou a 11 testes
+  (classificação de erro + retry de QR, tudo mockado). Suíte: **82 testes passando**.
