@@ -56,6 +56,30 @@
 - **Selo "Esgotado":** fundo `esgotado`, texto branco, pequeno, no canto da foto.
 - **Seletor de tamanho/cor:** chips; selecionado em `acento-escuro` com texto branco; indisponível apagado (`esgotado`) e riscado.
 
+## Entradas do cliente (formulários públicos)
+
+Os formulários do cliente (encomenda, carrinho, busca) seguem o mesmo princípio do painel
+(entradas restritas, menos cliques), com a identidade do cliente (cantos 8px, `acento-escuro`).
+
+- **Chips de tamanho (Encomenda):** o tamanho é escolhido em **chips** de seleção única
+  (P · M · G · GG · Único), não texto livre — um clique seleciona, clicar de novo desmarca.
+  Selecionado = `acento-escuro` + texto branco (regra dos chips); não selecionado = borda `borda`
+  com hover `acento-escuro`. Um chip **"+ Outro"** revela um campo de texto curto para tamanhos
+  fora do padrão (ex.: numéricos). `aria-pressed` no chip ativo; foco visível (anel `acento-escuro`).
+- **Sufixo "cm" + stepper (medidas):** Busto/Cintura/Quadril/Comprimento são **numéricos** com o
+  sufixo **"cm" fixo embutido** pela UI (não digitado), botões **+/−** (ícones lucide `Plus`/`Minus`)
+  e faixa sã (20–250). Opcionais (vazio = não informado); compostos no texto da encomenda.
+- **Máscara de telefone:** o campo de contato auto-formata para **`(67) 99999-9999`** enquanto
+  digita (só dígitos, trava no comprimento certo; aceita fixo 10 e celular 11 dígitos).
+- **Auto-capitalização:** o campo de nome capitaliza as iniciais das palavras.
+- **Contadores de caracteres (cliente):** campos com limite mostram "N/MÁX" e usam `maxLength`
+  (encomenda: nome 80, descrição 600; carrinho: observação 300; busca da vitrine: 60). Os limites
+  espelham o backend.
+- **Validação completa (cliente):** o formulário de encomenda valida **TODOS** os campos de uma vez
+  (mapa de erros por campo), com a mensagem **inline em vermelho** sob cada campo E um **resumo** no
+  topo — nunca um erro de cada vez. Erros do backend também são mapeados. `noValidate` no `<form>`.
+- **Prazo (date):** calendário nativo com `min`=hoje e `max`≈1 ano à frente.
+
 ## Sem "glitch" em filtros/busca
 
 - Ao filtrar/buscar, **não** trocar a grade inteira por skeleton (causa pulo/flash). Manter os resultados anteriores visíveis enquanto carrega (TanStack Query `placeholderData: keepPreviousData`).
@@ -135,6 +159,30 @@ Mesma identidade, porém **mais utilitário**: foco em tabelas e formulários cl
   selecionado(s)", "Excluir selecionados" (vermelho) e "Limpar seleção". A exclusão roda item a item
   com **progresso** ("Excluindo X de N…") e **falha parcial** (lista o que não saiu, sem travar).
   Linhas selecionadas ficam realçadas (`bg-acento/5`).
+- **Paleta de cores (variações):** a cor de uma variação NÃO é texto livre — é escolhida numa
+  **paleta de cores salvas** (`SeletorCor`): quadradinhos (swatches, cantos 8px, borda `borda`,
+  selecionado com anel `acento-escuro` + ✓) que, ao clicar, definem `cor` (nome) e `cor_hex` (hex).
+  Um botão **"Nova cor"** abre um picker (`react-colorful`, HEX) + nome → cria a cor (`POST /cores/`)
+  e já a seleciona. A seção **Cores** (`/admin/cores`) gerencia a paleta (swatch + nome + hex; criar/
+  editar em modal com picker; excluir via `ConfirmarExclusao`). Erros PT-BR do backend (nome
+  duplicado / hex fora de `#RRGGBB`) aparecem junto ao campo.
+- **Máscara de moeda (preço):** campos de preço usam máscara **BRL** enquanto digita
+  (`R$ 1.234,50`, milhar/decimais), com **teto de R$ 1.000.000**; o estado guarda centavos e a API
+  recebe um decimal simples (`CampoPreco` + `lib/moeda.js`). Prefixo "R$" embutido, alinhado à direita.
+- **Contadores de caracteres:** campos com limite mostram um contador "N/MÁX" (nome 80, descrição
+  600) e usam `maxLength` no input.
+- **Validação completa (sem erro a conta-gotas):** os formulários de peça validam **TODOS** os campos
+  de uma vez (`lib/validarPeca.js` → mapa de erros por campo). Cada campo inválido mostra a mensagem
+  **inline em vermelho** logo abaixo dele E há um **resumo** no topo ("Há N campos com problemas…").
+  Nunca mostrar um erro de cada vez.
+- **Olho = ver, lápis = editar:** o ícone `Eye` abre uma **visualização SÓ LEITURA** (sem inputs;
+  `DetalhePecaModal`); a edição fica num ícone `Pencil` separado (`EditarPecaModal`). Não usar o olho
+  para abrir o formulário de edição.
+- **Gráficos do painel (Dashboard):** usar `recharts` com a paleta dos tokens (`acento-escuro`
+  `#7e4e2e`, `acento` `#b07a56`, `sucesso` `#2e6b49`, `esgotado` `#8c887f`; grade `borda` `#d6cfc4`,
+  eixos `texto-suave` `#57534e`). Cartões em `superficie` com borda 8px; "Sem dados ainda." quando
+  vazio. Os gráficos são admin-only e **não** entram na pré-renderização (SSG só processa rotas
+  públicas), então a dependência não quebra o build Node.
 
 ## Marca (definida — 20/06/2026)
 - **Nome de exibição:** **Atelie ++** (grafia **sem acento**, igual ao logo — padroniza a marca e
@@ -162,3 +210,5 @@ Mesma identidade, porém **mais utilitário**: foco em tabelas e formulários cl
 - 20/06/2026 — Nova Home (landing em `/`) com 8 seções + catálogo movido para `/vitrine`; placeholders centralizados em `config/site.js`; SEO com pré-renderização (SSG) das rotas públicas.
 - 20/06/2026 — Marca aplicada: logo (`logo-atelie.png`) como favicon e no header do cliente e do admin; bloco de apresentação na home (`apresentacao-atelie.jpg`) com "Ateliê ++ / Costura sob medida". Cards de peça ganharam borda de destaque. Assets reais ficam em `frontend/public/` (o dono adiciona).
 - 21/06/2026 — Padrão de **exclusão com aviso** (componente `ConfirmarExclusao`: lista agrupada do que será removido + total + confirmação reforçada em cascata) e **seleção em massa** nas tabelas do admin (checkbox por linha + "todos", barra de ação, progresso e falha parcial).
+- 21/06/2026 — Entradas do **cliente** (formulários públicos): **chips de tamanho** (seleção única + "+ Outro"), **sufixo "cm" fixo + stepper +/−** nas medidas, **máscara de telefone** `(67) 99999-9999`, **auto-capitalização** do nome, **contadores de caracteres** (nome 80 / descrição 600 / observação 300 / busca 60, espelhando o backend) e **validação completa** na encomenda (todos os erros de uma vez, inline + resumo).
+- 21/06/2026 — Padrões novos do painel: **paleta de cores** para variações (`SeletorCor` + seção `/admin/cores`, picker `react-colorful`, persiste `cor`+`cor_hex`); **máscara de moeda BRL** com teto R$ 1.000.000 (`CampoPreco`); **contadores de caracteres** (nome 80 / descrição 600); **validação completa** (todos os erros de uma vez, inline + resumo); **olho = só leitura** vs **lápis = editar**; **gráficos do Dashboard** (`recharts`) com a paleta dos tokens (admin-only, fora do SSG).

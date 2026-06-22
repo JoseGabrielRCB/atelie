@@ -58,17 +58,23 @@ export default function Carrinho() {
       </div>
 
       <div className="mt-6">
-        <label
-          htmlFor="observacao"
-          className="mb-2 block text-sm font-medium text-texto"
-        >
-          Observação (opcional)
-        </label>
+        <div className="mb-2 flex items-baseline justify-between">
+          <label
+            htmlFor="observacao"
+            className="block text-sm font-medium text-texto"
+          >
+            Observação (opcional)
+          </label>
+          <span className="text-xs text-texto-suave">
+            {observacao.length}/300
+          </span>
+        </div>
         <textarea
           id="observacao"
           value={observacao}
           onChange={(e) => setObservacao(e.target.value)}
           rows={3}
+          maxLength={300}
           placeholder="Ex.: pode entregar até sexta?"
           className="w-full rounded-lg border border-borda bg-superficie px-4 py-3 text-texto placeholder:text-texto-suave focus:border-acento-escuro focus:outline-none focus:ring-2 focus:ring-acento-escuro/30"
         />

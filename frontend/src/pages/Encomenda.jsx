@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
+import { Minus, Plus } from "lucide-react";
 import { criarEncomenda } from "../lib/api";
 import { linkWhatsappEncomenda, whatsappConfigurado } from "../lib/whatsapp";
 import { useSeo } from "../seo/useSeo";
@@ -10,6 +11,17 @@ import { getMeta } from "../seo/meta";
 const MAX_IMAGENS = 5;
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 const TIPOS_OK = ["image/jpeg", "image/png", "image/webp"];
+
+// Limites de texto (espelham o backend): nome 80, descrição 600.
+const MAX_NOME = 80;
+const MAX_DESCRICAO = 600;
+
+// Medidas em cm: faixa sã para o stepper +/−.
+const MEDIDA_MIN = 20;
+const MEDIDA_MAX = 250;
+
+// Opções de tamanho (chips de seleção única) + opção "Outro" (texto livre).
+const TAMANHOS = ["P", "M", "G", "GG", "Único"];
 
 const inputClasse =
   "w-full rounded-lg border border-borda bg-superficie px-4 py-3 text-texto placeholder:text-texto-suave focus:border-acento-escuro focus:outline-none focus:ring-2 focus:ring-acento-escuro/30";
@@ -21,32 +33,68 @@ const formInicial = {
   prazo_desejado: "",
 };
 
-// Blocos de tamanho/medidas (todos opcionais). São compostos em um único texto
-// (`tamanho_medidas`) ao enviar, pois o backend guarda em um só campo.
+// Blocos de medidas numéricas (opcionais, em cm). Compostos em `tamanho_medidas`
+// junto com o tamanho ao enviar (o backend guarda tudo em um só campo).
 const CAMPOS_MEDIDAS = [
-  { chave: "tamanho", rotulo: "Tamanho", etiqueta: "Tamanho", placeholder: "P, M, G ou 38" },
-  { chave: "busto", rotulo: "Busto (cm)", etiqueta: "Busto", placeholder: "90" },
-  { chave: "cintura", rotulo: "Cintura (cm)", etiqueta: "Cintura", placeholder: "70" },
-  { chave: "quadril", rotulo: "Quadril (cm)", etiqueta: "Quadril", placeholder: "95" },
-  { chave: "comprimento", rotulo: "Comprimento (cm)", etiqueta: "Comprimento", placeholder: "120" },
+  { chave: "busto", etiqueta: "Busto" },
+  { chave: "cintura", etiqueta: "Cintura" },
+  { chave: "quadril", etiqueta: "Quadril" },
+  { chave: "comprimento", etiqueta: "Comprimento" },
 ];
 const medidasInicial = Object.fromEntries(CAMPOS_MEDIDAS.map((c) => [c.chave, ""]));
 
-function comporMedidas(medidas) {
-  return CAMPOS_MEDIDAS.filter((c) => medidas[c.chave].trim())
-    .map((c) => `${c.etiqueta}: ${medidas[c.chave].trim()}`)
-    .join("; ");
+// Capitaliza cada palavra (exibe/armazena o nome com iniciais maiúsculas).
+function capitalizarPalavras(texto) {
+  return texto
+    .toLocaleLowerCase("pt-BR")
+    .replace(/(^|\s|['’-])([\p{L}])/gu, (_, sep, letra) => sep + letra.toLocaleUpperCase("pt-BR"));
 }
 
-// Data de hoje em YYYY-MM-DD (para bloquear datas passadas no campo de prazo).
+// Máscara de telefone BR: "(67) 99999-9999" (celular 11 díg.) ou
+// "(67) 9999-9999" (fixo 10 díg.). Trava no comprimento certo.
+function formatarTelefone(valor) {
+  const d = valor.replace(/\D/g, "").slice(0, 11);
+  if (d.length === 0) return "";
+  if (d.length <= 2) return `(${d}`;
+  const ddd = d.slice(0, 2);
+  const resto = d.slice(2);
+  if (resto.length <= 4) return `(${ddd}) ${resto}`;
+  // 10 dígitos → 4+4; 11 dígitos → 5+4.
+  const corte = resto.length <= 8 ? 4 : 5;
+  return `(${ddd}) ${resto.slice(0, corte)}-${resto.slice(corte)}`;
+}
+
+// Conta só os dígitos (para validar comprimento do telefone).
+const digitos = (valor) => valor.replace(/\D/g, "");
+
+// Compõe o texto único `tamanho_medidas` a partir do tamanho + medidas em cm.
+function comporMedidas({ tamanho, tamanhoOutro, medidas }) {
+  const partes = [];
+  const tam = tamanho === "Outro" ? tamanhoOutro.trim() : tamanho;
+  if (tam) partes.push(`Tamanho: ${tam}`);
+  for (const campo of CAMPOS_MEDIDAS) {
+    const v = medidas[campo.chave].trim();
+    if (v) partes.push(`${campo.etiqueta}: ${v} cm`);
+  }
+  return partes.join("; ");
+}
+
+// Data de hoje e teto (~1 ano à frente) em YYYY-MM-DD para o campo de prazo.
 const hojeISO = new Date().toLocaleDateString("en-CA");
+const umAnoISO = (() => {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() + 1);
+  return d.toLocaleDateString("en-CA");
+})();
 
 export default function Encomenda() {
   useSeo(getMeta("/encomenda"));
   const [form, setForm] = useState(formInicial);
+  const [tamanho, setTamanho] = useState(""); // "" | "P".."Único" | "Outro"
+  const [tamanhoOutro, setTamanhoOutro] = useState("");
   const [medidas, setMedidas] = useState(medidasInicial);
   const [imagens, setImagens] = useState([]); // [{ arquivo, url }]
-  const [erro, setErro] = useState("");
+  const [erros, setErros] = useState({}); // { campo: "mensagem" }
   const [enviada, setEnviada] = useState(false);
 
   // Revoga as URLs de pré-visualização ao desmontar (sem revogar as ativas).
@@ -59,14 +107,40 @@ export default function Encomenda() {
     []
   );
 
-  const atualizar = (campo, valor) =>
-    setForm((f) => ({ ...f, [campo]: valor }));
+  const limparErro = (campo) =>
+    setErros((e) => {
+      if (!(campo in e)) return e;
+      const resto = { ...e };
+      delete resto[campo];
+      return resto;
+    });
 
-  const atualizarMedida = (chave, valor) =>
-    setMedidas((m) => ({ ...m, [chave]: valor }));
+  const atualizar = (campo, valor) => {
+    setForm((f) => ({ ...f, [campo]: valor }));
+    limparErro(campo);
+  };
+
+  // Stepper das medidas (clamp em [MIN, MAX]; vazio é permitido = opcional).
+  const ajustarMedida = (chave, delta) =>
+    setMedidas((m) => {
+      const atual = parseInt(m[chave], 10);
+      const base = Number.isNaN(atual) ? (delta > 0 ? MEDIDA_MIN - delta : MEDIDA_MIN) : atual;
+      const proximo = Math.min(MEDIDA_MAX, Math.max(MEDIDA_MIN, base + delta));
+      return { ...m, [chave]: String(proximo) };
+    });
+
+  const digitarMedida = (chave, valor) => {
+    const so = valor.replace(/\D/g, "").slice(0, 3);
+    setMedidas((m) => ({ ...m, [chave]: so }));
+  };
+
+  const escolherTamanho = (opcao) => {
+    setTamanho((atual) => (atual === opcao ? "" : opcao));
+    if (opcao !== "Outro") setTamanhoOutro("");
+  };
 
   function adicionarImagens(lista) {
-    setErro("");
+    limparErro("imagens");
     let problema = "";
     const novos = [];
     for (const arquivo of Array.from(lista)) {
@@ -89,7 +163,7 @@ export default function Encomenda() {
       }
       return combinado;
     });
-    if (problema) setErro(problema);
+    if (problema) setErros((e) => ({ ...e, imagens: problema }));
   }
 
   function removerImagem(indice) {
@@ -104,23 +178,37 @@ export default function Encomenda() {
     mutationFn: () =>
       criarEncomenda({
         ...form,
-        tamanho_medidas: comporMedidas(medidas),
+        tamanho_medidas: comporMedidas({ tamanho, tamanhoOutro, medidas }),
         imagens: imagens.map((i) => i.arquivo),
       }),
     onSuccess: () => setEnviada(true),
-    onError: (e) => setErro(e.message),
+    // Erro do backend (mapeado por campo quando possível, senão geral).
+    onError: (e) => setErros((atual) => ({ ...atual, geral: e.message })),
   });
 
   function aoEnviar(e) {
     e.preventDefault();
-    setErro("");
-    if (!form.nome.trim()) return setErro("Informe o seu nome.");
-    if (!form.contato.trim())
-      return setErro("Informe um contato (telefone/WhatsApp).");
+    // Valida TUDO de uma vez (não a conta-gotas) e mostra todos os problemas.
+    const novos = {};
+    if (!form.nome.trim()) novos.nome = "Informe o seu nome.";
+    const tel = digitos(form.contato);
+    if (!tel) novos.contato = "Informe um contato (telefone/WhatsApp).";
+    else if (tel.length < 10)
+      novos.contato = "Informe um telefone completo com DDD.";
     if (!form.descricao.trim())
-      return setErro("Descreva a peça que deseja encomendar.");
+      novos.descricao = "Descreva a peça que deseja encomendar.";
+    if (tamanho === "Outro" && !tamanhoOutro.trim())
+      novos.tamanho = "Informe o tamanho ou deixe a opção em branco.";
     if (form.prazo_desejado && form.prazo_desejado < hojeISO)
-      return setErro("O prazo desejado não pode ser uma data passada.");
+      novos.prazo_desejado = "O prazo desejado não pode ser uma data passada.";
+    if (form.prazo_desejado && form.prazo_desejado > umAnoISO)
+      novos.prazo_desejado = "Escolha um prazo de até um ano à frente.";
+
+    if (Object.keys(novos).length) {
+      setErros(novos);
+      return;
+    }
+    setErros({});
     enviarMut.mutate();
   }
 
@@ -128,8 +216,10 @@ export default function Encomenda() {
     imagens.forEach((i) => URL.revokeObjectURL(i.url));
     setImagens([]);
     setForm(formInicial);
+    setTamanho("");
+    setTamanhoOutro("");
     setMedidas(medidasInicial);
-    setErro("");
+    setErros({});
     setEnviada(false);
   }
 
@@ -177,6 +267,9 @@ export default function Encomenda() {
   }
 
   const enviando = enviarMut.isPending;
+  const erroDe = (campo) => erros[campo];
+  // Resumo no topo: lista todos os campos com problema de uma vez.
+  const totalErros = Object.keys(erros).filter((k) => k !== "geral").length;
 
   return (
     <section className="mx-auto max-w-xl">
@@ -195,7 +288,21 @@ export default function Encomenda() {
         referência — o ateliê analisa e entra em contato.
       </p>
 
-      <form onSubmit={aoEnviar} className="mt-6 space-y-5">
+      <form onSubmit={aoEnviar} noValidate className="mt-6 space-y-5">
+        {(totalErros > 0 || erros.geral) && (
+          <div role="alert" className="rounded-lg bg-erro/10 px-4 py-3 text-sm text-erro">
+            {erros.geral ? (
+              erros.geral
+            ) : (
+              <>
+                Há {totalErros}{" "}
+                {totalErros === 1 ? "campo com problema" : "campos com problemas"}.
+                Confira as mensagens abaixo.
+              </>
+            )}
+          </div>
+        )}
+
         <fieldset className="space-y-5" disabled={enviando}>
           <div>
             <label htmlFor="enc-nome" className="mb-1 block text-sm font-medium text-texto">
@@ -204,10 +311,14 @@ export default function Encomenda() {
             <input
               id="enc-nome"
               value={form.nome}
-              onChange={(e) => atualizar("nome", e.target.value)}
-              required
+              onChange={(e) => atualizar("nome", capitalizarPalavras(e.target.value))}
+              maxLength={MAX_NOME}
+              aria-invalid={Boolean(erroDe("nome"))}
               className={inputClasse}
             />
+            {erroDe("nome") && (
+              <p className="mt-1 text-sm text-erro">{erroDe("nome")}</p>
+            )}
           </div>
 
           <div>
@@ -216,52 +327,153 @@ export default function Encomenda() {
             </label>
             <input
               id="enc-contato"
+              type="tel"
+              inputMode="tel"
               value={form.contato}
-              onChange={(e) => atualizar("contato", e.target.value)}
-              required
-              placeholder="(81) 99999-0000"
+              onChange={(e) => atualizar("contato", formatarTelefone(e.target.value))}
+              placeholder="(67) 99999-9999"
+              aria-invalid={Boolean(erroDe("contato"))}
               className={inputClasse}
             />
+            {erroDe("contato") && (
+              <p className="mt-1 text-sm text-erro">{erroDe("contato")}</p>
+            )}
           </div>
 
           <div>
-            <label htmlFor="enc-descricao" className="mb-1 block text-sm font-medium text-texto">
-              O que você quer encomendar?
-            </label>
+            <div className="mb-1 flex items-baseline justify-between">
+              <label htmlFor="enc-descricao" className="block text-sm font-medium text-texto">
+                O que você quer encomendar?
+              </label>
+              <span className="text-xs text-texto-suave">
+                {form.descricao.length}/{MAX_DESCRICAO}
+              </span>
+            </div>
             <textarea
               id="enc-descricao"
               value={form.descricao}
               onChange={(e) => atualizar("descricao", e.target.value)}
-              required
+              maxLength={MAX_DESCRICAO}
               rows={4}
               placeholder="Ex.: vestido de festa azul, godê, com manga..."
+              aria-invalid={Boolean(erroDe("descricao"))}
               className={inputClasse}
             />
+            {erroDe("descricao") && (
+              <p className="mt-1 text-sm text-erro">{erroDe("descricao")}</p>
+            )}
           </div>
 
+          {/* Tamanho: chips de seleção única + "Outro" (texto livre). */}
           <fieldset>
             <legend className="mb-1 block text-sm font-medium text-texto">
-              Tamanho ou medidas <span className="text-texto-suave">(opcional)</span>
+              Tamanho <span className="text-texto-suave">(opcional)</span>
+            </legend>
+            <div className="flex flex-wrap gap-2">
+              {TAMANHOS.map((opcao) => {
+                const ativo = tamanho === opcao;
+                return (
+                  <button
+                    key={opcao}
+                    type="button"
+                    onClick={() => escolherTamanho(opcao)}
+                    aria-pressed={ativo}
+                    className={
+                      "min-w-12 rounded-lg border px-4 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-escuro focus-visible:ring-offset-2 focus-visible:ring-offset-fundo " +
+                      (ativo
+                        ? "border-acento-escuro bg-acento-escuro text-white"
+                        : "border-borda bg-superficie text-texto hover:border-acento-escuro")
+                    }
+                  >
+                    {opcao}
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() => escolherTamanho("Outro")}
+                aria-pressed={tamanho === "Outro"}
+                className={
+                  "rounded-lg border px-4 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-escuro focus-visible:ring-offset-2 focus-visible:ring-offset-fundo " +
+                  (tamanho === "Outro"
+                    ? "border-acento-escuro bg-acento-escuro text-white"
+                    : "border-borda bg-superficie text-texto hover:border-acento-escuro")
+                }
+              >
+                + Outro
+              </button>
+            </div>
+            {tamanho === "Outro" && (
+              <input
+                value={tamanhoOutro}
+                onChange={(e) => {
+                  setTamanhoOutro(e.target.value);
+                  limparErro("tamanho");
+                }}
+                maxLength={40}
+                placeholder="Ex.: 38, 42, sob medida..."
+                aria-label="Outro tamanho"
+                aria-invalid={Boolean(erroDe("tamanho"))}
+                className={inputClasse + " mt-2"}
+              />
+            )}
+            {erroDe("tamanho") && (
+              <p className="mt-1 text-sm text-erro">{erroDe("tamanho")}</p>
+            )}
+          </fieldset>
+
+          {/* Medidas em cm (opcionais): numéricas com sufixo fixo + stepper. */}
+          <fieldset>
+            <legend className="mb-1 block text-sm font-medium text-texto">
+              Medidas <span className="text-texto-suave">(opcional, em cm)</span>
             </legend>
             <p className="mb-2 text-xs text-texto-suave">
-              Preencha o que souber — pode deixar em branco os que não tiver.
+              Preencha o que souber — pode deixar em branco o que não tiver.
             </p>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {CAMPOS_MEDIDAS.map((campo) => (
                 <div key={campo.chave}>
                   <label
                     htmlFor={`enc-${campo.chave}`}
                     className="mb-1 block text-xs font-medium text-texto-suave"
                   >
-                    {campo.rotulo}
+                    {campo.etiqueta}
                   </label>
-                  <input
-                    id={`enc-${campo.chave}`}
-                    value={medidas[campo.chave]}
-                    onChange={(e) => atualizarMedida(campo.chave, e.target.value)}
-                    placeholder={campo.placeholder}
-                    className={inputClasse}
-                  />
+                  <div className="flex items-stretch gap-1">
+                    <button
+                      type="button"
+                      onClick={() => ajustarMedida(campo.chave, -1)}
+                      aria-label={`Diminuir ${campo.etiqueta}`}
+                      className="inline-flex w-10 items-center justify-center rounded-lg border border-borda bg-superficie text-texto transition hover:border-acento-escuro focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-escuro"
+                    >
+                      <Minus size={16} aria-hidden="true" />
+                    </button>
+                    <div className="relative flex-1">
+                      <input
+                        id={`enc-${campo.chave}`}
+                        type="text"
+                        inputMode="numeric"
+                        value={medidas[campo.chave]}
+                        onChange={(e) => digitarMedida(campo.chave, e.target.value)}
+                        placeholder="—"
+                        className={inputClasse + " pr-9 text-center"}
+                      />
+                      <span
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-texto-suave"
+                      >
+                        cm
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => ajustarMedida(campo.chave, 1)}
+                      aria-label={`Aumentar ${campo.etiqueta}`}
+                      className="inline-flex w-10 items-center justify-center rounded-lg border border-borda bg-superficie text-texto transition hover:border-acento-escuro focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-escuro"
+                    >
+                      <Plus size={16} aria-hidden="true" />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -275,10 +487,15 @@ export default function Encomenda() {
               id="enc-prazo"
               type="date"
               min={hojeISO}
+              max={umAnoISO}
               value={form.prazo_desejado}
               onChange={(e) => atualizar("prazo_desejado", e.target.value)}
+              aria-invalid={Boolean(erroDe("prazo_desejado"))}
               className={inputClasse}
             />
+            {erroDe("prazo_desejado") && (
+              <p className="mt-1 text-sm text-erro">{erroDe("prazo_desejado")}</p>
+            )}
           </div>
 
           {/* Imagens de referência */}
@@ -301,6 +518,9 @@ export default function Encomenda() {
                 " file:mr-3 file:rounded file:border-0 file:bg-borda/60 file:px-3 file:py-1 file:text-texto"
               }
             />
+            {erroDe("imagens") && (
+              <p className="mt-1 text-sm text-erro">{erroDe("imagens")}</p>
+            )}
 
             {imagens.length > 0 && (
               <ul className="mt-3 grid grid-cols-3 gap-3 sm:grid-cols-4">
@@ -325,12 +545,6 @@ export default function Encomenda() {
             )}
           </div>
         </fieldset>
-
-        {erro && (
-          <p role="alert" className="rounded-lg bg-erro/10 px-4 py-3 text-sm text-erro">
-            {erro}
-          </p>
-        )}
 
         <button
           type="submit"

@@ -9,6 +9,7 @@ export default function Filtro({ busca, onBusca, categoria, onCategoria }) {
         type="search"
         value={busca}
         onChange={(e) => onBusca(e.target.value)}
+        maxLength={60}
         placeholder="Buscar por nome..."
         className="w-full flex-1 rounded-lg border border-borda bg-superficie px-4 py-2.5 text-texto placeholder:text-texto-suave focus:border-acento-escuro focus:outline-none focus:ring-2 focus:ring-acento-escuro/30"
       />

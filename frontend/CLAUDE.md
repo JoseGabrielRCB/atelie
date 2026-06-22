@@ -106,10 +106,10 @@ frontend/
 | Rota          | Componente     | Descrição |
 |---------------|----------------|-----------|
 | `/`           | `Home`         | **Landing/SEO** (única `<h1>`). 8 seções (copys de `COPYS_HOME.md`): Hero + 2 CTAs + microcopy; **Peças em destaque** (`?destaque=true`, fallback às recentes, reusa `PecaCard`); Sobre (foto `apresentacao-atelie.jpg`, `loading="lazy"`); O que oferecemos; Como funciona (4 passos); Depoimentos; FAQ; CTA final. Textos lidos de `config/site.js`. Pré-renderizada (SSG) com JSON-LD LocalBusiness + FAQPage. |
-| `/vitrine`    | `Vitrine`      | Catálogo (`<h1>` "Vitrine"). Grade responsiva (2 cols mobile → 4 desktop). Busca por nome (debounce 350ms → `?search=`), filtro por categoria (`?categoria=`), ordenação `-criado_em`. Selo "Esgotado" quando todas as variações estão esgotadas. Estados: skeleton / erro / vazio. CTA de encomenda no rodapé da página. Pré-renderizada (SSG). |
+| `/vitrine`    | `Vitrine`      | Catálogo (`<h1>` "Vitrine"). Grade responsiva (2 cols mobile → 4 desktop). Busca por nome (**máx. 60**, debounce 350ms → `?search=`), filtro por categoria (`?categoria=`), ordenação `-criado_em`. Selo "Esgotado" quando todas as variações estão esgotadas. Estados: skeleton / erro / vazio. CTA de encomenda no rodapé da página. Pré-renderizada (SSG). |
 | `/peca/:id`   | `DetalhePeca`  | Galeria (`Galeria` — carretel: imagem grande + setas anterior/próxima circulando da principal à última + miniaturas clicáveis com contador "i/total"), nome, preço, descrição. `SeletorVariacao` (esgotadas desabilitadas; **se só houver 1 variação disponível, vem pré-selecionada**), quantidade (**travada até escolher tamanho/cor** quando há várias), **subtotal dinâmico (preço × quantidade)**, "Adicionar ao pedido" com feedback. Peça `sob_medida` sem variações: adiciona sem variação. |
-| `/carrinho`   | `Carrinho`     | Lista de itens (ajustar/remover, com **subtotal por linha**), **total dinâmico do pedido** (preço × quantidade somado), observação livre, "Enviar pedido pelo WhatsApp". Vazio: CTA para a vitrine. |
-| `/encomenda`  | `Encomenda`    | Formulário de **encomenda sob medida**: nome, contato, descrição, **blocos de tamanho/medidas** (Tamanho, Busto, Cintura, Quadril, Comprimento — opcionais, compostos em `tamanho_medidas` ao enviar), prazo (opcional, **bloqueia datas passadas** via `min`) e imagens de referência (múltiplas, pré-visualização e remover, máx. 5 / 5 MB / jpg-png-webp). `POST` multipart para `/api/encomendas/`. Confirmação com "enviar outra"/"voltar" e botão opcional de aviso no WhatsApp. Entradas: banner na vitrine + link no header. |
+| `/carrinho`   | `Carrinho`     | Lista de itens (ajustar/remover, com **subtotal por linha**), **total dinâmico do pedido** (preço × quantidade somado), observação livre (**máx. 300 com contador ao vivo**), "Enviar pedido pelo WhatsApp". Vazio: CTA para a vitrine. |
+| `/encomenda`  | `Encomenda`    | Formulário de **encomenda sob medida** com entradas restritas (menos cliques): **Nome** (máx. 80, auto-capitaliza palavras), **Contato** (máscara de telefone BR `(67) 99999-9999`, 10/11 dígitos), **Descrição** (máx. 600 + contador ao vivo), **Tamanho** em **chips** de seleção única (P · M · G · GG · Único + chip "+ Outro" que revela texto livre), **Medidas** Busto/Cintura/Quadril/Comprimento (numéricas, sufixo fixo "cm", stepper +/−, faixa 20–250, opcionais), **prazo** (opcional, `min`=hoje e `max`≈1 ano) e imagens de referência (múltiplas, pré-visualização/remover, máx. 5 / 5 MB / jpg-png-webp). Tamanho+medidas são compostos em `tamanho_medidas` (ex.: "Tamanho: M; Busto: 90 cm"). **Validação mostra TODOS os erros de uma vez** (mapa por campo, inline + resumo no topo) e mapeia erros do backend. `POST` multipart para `/api/encomendas/`. Confirmação com "enviar outra"/"voltar" e botão opcional de aviso no WhatsApp. Entradas: banner na vitrine + link no header. |
 
 ### Admin (`/admin/*`, protegido por JWT)
 
@@ -383,3 +383,14 @@ pré-renderizadas, ex. `/peca/:id` e `/admin/*`, sobem por CSR). Preencher `SITE
   a seção "Atalhos"; 3 gráficos `recharts` (instalado) + caixinha de perguntas (`lib/perguntas.js`,
   intenções por palavra-chave, sem API paga). `lint` (0 erros) e `npm run build` (SSG) ok — recharts
   não entra no bundle SSR (só rotas públicas são pré-renderizadas).
+- **2026-06-21** — Entradas do **cliente** com menos cliques e restritas (Subagente C):
+  **Encomenda** (`Encomenda.jsx`) — Tamanho virou **chips** de seleção única (P/M/G/GG/Único +
+  "+ Outro" com texto livre que alimenta `tamanho_medidas`); Busto/Cintura/Quadril/Comprimento
+  são **numéricos** com sufixo fixo "cm" + **stepper +/−** (lucide `Plus`/`Minus`, faixa 20–250,
+  opcionais); Nome `maxLength 80` + **auto-capitalização**; Contato com **máscara de telefone**
+  `(67) 99999-9999` (10/11 dígitos, trava no fim); Descrição `maxLength 600` + **contador**;
+  Prazo nativo com `min`=hoje e `max`≈1 ano; **validação acumula todos os erros** (mapa por campo,
+  inline em vermelho + resumo no topo, `noValidate`) e mapeia o erro do backend. Upload/limites de
+  imagem, tela "enviada" e botão do WhatsApp mantidos. **Carrinho** — observação `maxLength 300` +
+  contador. **Vitrine** — busca `maxLength 60` (`Filtro.jsx`). Admin intacto.
+  `lint` (0 erros) e `npm run build` (SSG) ok.
