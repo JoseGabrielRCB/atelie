@@ -235,6 +235,14 @@ Base: `/api/`. Respostas de lista são **paginadas** (`PageNumberPagination`, `P
   aninhados, filtro `?status=`), `GET /api/pedidos/{id}/`. Campos: `id`, `nome`, `contato`,
   `status`, `total`, `mp_preference_id`, `mp_payment_id`, `criado_em`, `expira_em`, `itens`
   (`[{ id, variacao, variacao_descricao, peca_nome, quantidade, preco_unit }]`). Anônimo → `401`.
+- **Conexão do WhatsApp** (`IsAuthenticated`) — o backend é PROXY da Evolution (guarda a
+  `EVOLUTION_API_KEY`; o navegador nunca a vê). Toda lógica em `catalogo/evolution.py` (degrada sem
+  exceção, não loga segredo/QR):
+  - `GET /api/whatsapp/status/` → `{ configurado, estado, instancia }` (`estado`: `open`/`connecting`/
+    `close`/`nao_criada`/`nao_configurado`/`indisponivel`/`desconhecido`).
+  - `POST /api/whatsapp/conectar/` → garante a instância (cria se 404) e devolve o QR:
+    `{ estado, qr_base64, pairing_code, mensagem }`.
+  - `POST /api/whatsapp/desconectar/` → logout da instância → `{ ok, mensagem }`.
 - `POST /api/auth/login/` — body `{ "username", "password" }` → `{ "access", "refresh" }`.
 - `POST /api/auth/refresh/` — body `{ "refresh" }` → `{ "access" }`.
 
@@ -453,3 +461,10 @@ valor dispara alerta). Lidos em `settings.py` como `settings.EVOLUTION_URL`/`EVO
   `200` (erros engolidos com log genérico, sem PII). Rota `POST /api/webhooks/whatsapp/`. Reusa
   `enviar_whatsapp`/`checar_estoque_baixo` do subagente B. Novo `test_comandos.py` (12 testes).
   Suíte: **71 testes passando**.
+- **2026-06-22** — **Conexão do WhatsApp pelo painel** (parear por QR sem usar curl/README). Novo
+  módulo `catalogo/evolution.py` (proxy admin para a Evolution: `estado_conexao()`, `conectar()`
+  que cria a instância se preciso e devolve o QR, `desconectar()`; degrada sem exceção, nunca loga
+  segredo/QR). Três views só-admin (`IsAuthenticated`): `GET /api/whatsapp/status/`,
+  `POST /api/whatsapp/conectar/`, `POST /api/whatsapp/desconectar/`. O backend guarda a
+  `EVOLUTION_API_KEY` — o navegador nunca a recebe. Novo `test_conexao_whatsapp.py` (7 testes,
+  Evolution mockada). Sem migrations. Suíte: **78 testes passando**.

@@ -20,7 +20,7 @@ from rest_framework.views import APIView
 
 import logging
 
-from . import pagamentos
+from . import evolution, pagamentos
 from .comandos import interpretar
 from .estoque import disponibilidade
 from .models import (
@@ -491,3 +491,37 @@ class PedidoViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = PedidoSerializer
     permission_classes = [IsAuthenticated]
     filterset_fields = ["status"]
+
+
+# --------------------------------------------------------------------------
+# Conexão do WhatsApp (bot do dono) — proxy admin para a Evolution API
+# --------------------------------------------------------------------------
+# O backend é o PROXY: guarda a EVOLUTION_API_KEY e fala com a Evolution; o
+# navegador (admin) nunca vê o segredo. Todas as ações exigem JWT de admin.
+
+
+class WhatsappConexaoStatusView(APIView):
+    """Estado da conexão do WhatsApp do dono (admin)."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        return Response(evolution.estado_conexao())
+
+
+class WhatsappConectarView(APIView):
+    """Garante a instância e devolve o QR Code para parear o número (admin)."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        return Response(evolution.conectar())
+
+
+class WhatsappDesconectarView(APIView):
+    """Desconecta (logout) o número da instância (admin)."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        return Response(evolution.desconectar())

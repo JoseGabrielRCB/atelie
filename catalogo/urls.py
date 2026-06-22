@@ -14,6 +14,9 @@ from .views import (
     PedidoViewSet,
     VariacaoViewSet,
     WebhookMercadoPagoView,
+    WhatsappConectarView,
+    WhatsappConexaoStatusView,
+    WhatsappDesconectarView,
     WhatsappWebhookView,
 )
 
@@ -40,5 +43,9 @@ urlpatterns = [
         WhatsappWebhookView.as_view(),
         name="webhook-whatsapp",
     ),
+    # Conexão do WhatsApp do dono (admin): status / QR / logout.
+    path("whatsapp/status/", WhatsappConexaoStatusView.as_view(), name="whatsapp-status"),
+    path("whatsapp/conectar/", WhatsappConectarView.as_view(), name="whatsapp-conectar"),
+    path("whatsapp/desconectar/", WhatsappDesconectarView.as_view(), name="whatsapp-desconectar"),
     path("", include(router.urls)),
 ]

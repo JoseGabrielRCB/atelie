@@ -100,7 +100,7 @@ frontend/
         ├── pagamento/  # retornos do Mercado Pago: Sucesso.jsx, Pendente.jsx, Falha.jsx (CSR, fora do SSG)
         └── admin/
             ├── Login.jsx, Dashboard.jsx, PecasLista.jsx,
-            └── Estoque.jsx, Categorias.jsx, Cores.jsx, Destaques.jsx, Encomendas.jsx, Vendas.jsx
+            └── Estoque.jsx, Categorias.jsx, Cores.jsx, Destaques.jsx, Encomendas.jsx, Vendas.jsx, Whatsapp.jsx
 ```
 
 ## Telas / rotas
@@ -131,6 +131,7 @@ frontend/
 | `/admin/destaques`  | `Destaques`  | Curadoria das **peças em destaque** da Home. Tabela **ordenável** (nome, categoria, preço, status, destaque) com busca por nome e atalho "Só em destaque". Toggle por peça (ícone `Star`/`StarOff`) via PATCH `{destaque}` (`atualizarPeca`) — invalida `["admin","pecas"]` e `["pecas"]`. Contador "N peças em destaque" + lembrete suave acima de 8 (a Home mostra até 8). Aviso "em destaque, mas oculta" quando a peça está em destaque mas `ativo=false`. |
 | `/admin/encomendas` | `Encomendas` | Tabela **ordenável** das encomendas sob medida (cliente, contato **formatado `(DD) NÚMERO`**, prazo, status, data) com destaque das **novas** (`recebido`). **Seleção em massa** + exclusão com aviso (`ConfirmarExclusao` lista as imagens de referência que serão removidas). Detalhe em **modal**: dados, descrição, galeria das imagens (abrem em **popup/lightbox** na própria página, com setas e Esc), seletor de status (PATCH) e excluir (confirmação). |
 | `/admin/vendas`     | `Vendas`     | **Pedidos do pagamento online** (Mercado Pago) — tabela **ordenável** (Cliente, Itens=contagem, Total via `Preco`, Status, Data) com filtro por status no cliente (carga completa via `useAdminPedidos`). Selo: `pago`→verde, `aguardando_pagamento`→acento, `expirado`→cinza, `cancelado`→vermelho. Clique na linha / ícone `Eye` abre **modal** de detalhe: cliente (nome+contato), status, total, criado/expira em, **lista de itens** (`peca_nome`, `variacao_descricao`, qtd, `preco_unit` via `Preco`) e os **IDs do Mercado Pago** (`mp_preference_id`, `mp_payment_id`). **SOMENTE LEITURA**: nota explícita de que estorno/cancelamento são feitos no painel do Mercado Pago — sem ações de editar/excluir. |
+| `/admin/whatsapp`   | `Whatsapp`   | **Conectar o WhatsApp do bot** por QR Code, sem curl/README. Mostra o status (`whatsappStatus` → selo Conectado/Conectando/Desconectado/Não configurado), botão **"Conectar"** (`whatsappConectar` → exibe o **QR `<img>`** + código de pareamento) e **polling** do status a cada 4s enquanto o QR está na tela (some ao conectar — "ajuste de estado na renderização", sem efeito). Botão **"Desconectar"** quando conectado. O backend é proxy (a chave da Evolution nunca chega ao navegador). |
 
 ## Como consome a API
 
@@ -168,6 +169,10 @@ frontend/
   cria/edita/exclui (estorno/cancelamento são feitos no painel do MP). Shape: `{id, nome, contato,
   status, total, mp_preference_id, mp_payment_id, criado_em, expira_em, itens:[{id, variacao,
   variacao_descricao, peca_nome, quantidade, preco_unit}]}`.
+- **Conexão do WhatsApp (admin)**: `whatsappStatus()` (`GET /whatsapp/status/`), `whatsappConectar()`
+  (`POST /whatsapp/conectar/` → `{estado, qr_base64, pairing_code, mensagem}`) e `whatsappDesconectar()`
+  (`POST /whatsapp/desconectar/`), todos com JWT. O backend é proxy da Evolution (a `EVOLUTION_API_KEY`
+  nunca vai ao navegador). A página `Whatsapp.jsx` faz polling do status enquanto o QR está visível.
 - **Auth**: `POST /auth/login/` → `{access, refresh}` (em `localStorage`); em `401` o `api.js`
   tenta `POST /auth/refresh/` uma vez; se falhar, limpa tokens e dispara `auth:expirou`
   (o `AuthContext` desloga → guard manda ao login). Tokens nunca vão ao console.
@@ -440,3 +445,10 @@ pré-renderizadas, ex. `/peca/:id` e `/admin/*`, sobem por CSR). Preencher `SITE
   hook `useAdminPedidos`, item "Vendas" no `AdminLayout` e dois cartões no Dashboard ("Vendas pagas
   no mês" → link p/ Vendas, "Pedidos aguardando pagamento"). `lint` (0 erros, só warnings
   pré-existentes de react-refresh) e `npm run build` (SSG) ok.
+- **2026-06-22** — Seção **WhatsApp** no painel (`/admin/whatsapp`, `pages/admin/Whatsapp.jsx`) para
+  o dono **parear o número por QR Code** sem usar curl/README. Mostra status (`whatsappStatus`),
+  botão "Conectar" que pede o QR (`whatsappConectar`) e o exibe como `<img>` + código de pareamento,
+  faz **polling** do status enquanto o QR está visível (some ao conectar — ajuste de estado na
+  renderização, sem efeito) e "Desconectar" quando conectado. Helpers `whatsappStatus/Conectar/
+  Desconectar` em `lib/api.js`; item "WhatsApp" no `AdminLayout`. O backend é proxy (chave da
+  Evolution nunca chega ao navegador). `lint` (0 erros) e `npm run build` (SSG) ok.

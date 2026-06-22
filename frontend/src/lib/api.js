@@ -389,3 +389,13 @@ export async function listarTodosPedidos(filtros = {}, { auth = true } = {}) {
 }
 
 export const obterPedido = (id) => request(`/pedidos/${id}/`, { auth: true });
+
+// ----------------------------------------------------------------------------
+// Conexão do WhatsApp (bot do dono) — admin. O backend faz de proxy para a
+// Evolution; a chave da Evolution NUNCA chega ao navegador.
+// ----------------------------------------------------------------------------
+export const whatsappStatus = () => request("/whatsapp/status/", { auth: true });
+export const whatsappConectar = () =>
+  request("/whatsapp/conectar/", { method: "POST", auth: true });
+export const whatsappDesconectar = () =>
+  request("/whatsapp/desconectar/", { method: "POST", auth: true });

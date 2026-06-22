@@ -10,6 +10,7 @@ const LINKS = [
   { para: "/admin/destaques", rotulo: "Destaques", fim: false },
   { para: "/admin/encomendas", rotulo: "Encomendas", fim: false },
   { para: "/admin/vendas", rotulo: "Vendas", fim: false },
+  { para: "/admin/whatsapp", rotulo: "WhatsApp", fim: false },
 ];
 
 function classeLink({ isActive }) {

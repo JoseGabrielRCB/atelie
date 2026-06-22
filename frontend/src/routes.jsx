@@ -22,6 +22,7 @@ import Cores from "./pages/admin/Cores.jsx";
 import Destaques from "./pages/admin/Destaques.jsx";
 import Encomendas from "./pages/admin/Encomendas.jsx";
 import Vendas from "./pages/admin/Vendas.jsx";
+import Whatsapp from "./pages/admin/Whatsapp.jsx";
 
 // Árvore de rotas compartilhada (cliente: BrowserRouter; SSG: StaticRouter).
 export default function AppRoutes() {
@@ -62,6 +63,7 @@ export default function AppRoutes() {
         <Route path="destaques" element={<Destaques />} />
         <Route path="encomendas" element={<Encomendas />} />
         <Route path="vendas" element={<Vendas />} />
+        <Route path="whatsapp" element={<Whatsapp />} />
       </Route>
     </Routes>
   );
