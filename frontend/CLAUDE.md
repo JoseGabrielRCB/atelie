@@ -131,7 +131,7 @@ frontend/
 | `/admin/destaques`  | `Destaques`  | Curadoria das **peças em destaque** da Home. Tabela **ordenável** (nome, categoria, preço, status, destaque) com busca por nome e atalho "Só em destaque". Toggle por peça (ícone `Star`/`StarOff`) via PATCH `{destaque}` (`atualizarPeca`) — invalida `["admin","pecas"]` e `["pecas"]`. Contador "N peças em destaque" + lembrete suave acima de 8 (a Home mostra até 8). Aviso "em destaque, mas oculta" quando a peça está em destaque mas `ativo=false`. |
 | `/admin/encomendas` | `Encomendas` | Tabela **ordenável** das encomendas sob medida (cliente, contato **formatado `(DD) NÚMERO`**, prazo, status, data) com destaque das **novas** (`recebido`). **Seleção em massa** + exclusão com aviso (`ConfirmarExclusao` lista as imagens de referência que serão removidas). Detalhe em **modal**: dados, descrição, galeria das imagens (abrem em **popup/lightbox** na própria página, com setas e Esc), seletor de status (PATCH) e excluir (confirmação). |
 | `/admin/vendas`     | `Vendas`     | **Pedidos do pagamento online** (Mercado Pago) — tabela **ordenável** (Cliente, Itens=contagem, Total via `Preco`, Status, Data) com filtro por status no cliente (carga completa via `useAdminPedidos`). Selo: `pago`→verde, `aguardando_pagamento`→acento, `expirado`→cinza, `cancelado`→vermelho. Clique na linha / ícone `Eye` abre **modal** de detalhe: cliente (nome+contato), status, total, criado/expira em, **lista de itens** (`peca_nome`, `variacao_descricao`, qtd, `preco_unit` via `Preco`) e os **IDs do Mercado Pago** (`mp_preference_id`, `mp_payment_id`). **SOMENTE LEITURA**: nota explícita de que estorno/cancelamento são feitos no painel do Mercado Pago — sem ações de editar/excluir. |
-| `/admin/whatsapp`   | `Whatsapp`   | **Conectar o WhatsApp do bot** por QR Code, sem curl/README. Mostra o status (`whatsappStatus` → selo Conectado/Conectando/Desconectado/Não configurado), botão **"Conectar"** (`whatsappConectar` → exibe o **QR `<img>`** + código de pareamento) e **polling** do status a cada 4s enquanto o QR está na tela (some ao conectar — "ajuste de estado na renderização", sem efeito). Botão **"Desconectar"** quando conectado. O backend é proxy (a chave da Evolution nunca chega ao navegador). |
+| `/admin/whatsapp`   | `Whatsapp`   | **Conectar o WhatsApp do bot** por QR Code e gerenciar o **WhatsApp do dono**. Mostra sempre o número atual autorizado (`whatsappDono` → `GET /whatsapp/dono/`), permite trocar por campo numérico com confirmação (`atualizarWhatsappDono` → `PATCH /whatsapp/dono/`, salva `WHATSAPP_DONO` no `.env` via backend) e mantém o fluxo de status/QR: `whatsappStatus`, botão **"Conectar"** (`whatsappConectar` → exibe o **QR `<img>`** + código de pareamento), **polling** enquanto o QR está na tela e botão **"Desconectar"** quando conectado. O backend é proxy (a chave da Evolution nunca chega ao navegador). |
 
 ## Como consome a API
 
@@ -170,9 +170,10 @@ frontend/
   status, total, mp_preference_id, mp_payment_id, criado_em, expira_em, itens:[{id, variacao,
   variacao_descricao, peca_nome, quantidade, preco_unit}]}`.
 - **Conexão do WhatsApp (admin)**: `whatsappStatus()` (`GET /whatsapp/status/`), `whatsappConectar()`
-  (`POST /whatsapp/conectar/` → `{estado, qr_base64, pairing_code, mensagem}`) e `whatsappDesconectar()`
-  (`POST /whatsapp/desconectar/`), todos com JWT. O backend é proxy da Evolution (a `EVOLUTION_API_KEY`
-  nunca vai ao navegador). A página `Whatsapp.jsx` faz polling do status enquanto o QR está visível.
+  (`POST /whatsapp/conectar/` → `{estado, qr_base64, pairing_code, mensagem}`), `whatsappDesconectar()`
+  (`POST /whatsapp/desconectar/`), `whatsappDono()` (`GET /whatsapp/dono/`) e `atualizarWhatsappDono(numero)`
+  (`PATCH /whatsapp/dono/`), todos com JWT. O backend é proxy da Evolution (a `EVOLUTION_API_KEY`
+  nunca vai ao navegador). A página `Whatsapp.jsx` faz polling do status enquanto o QR está visível e mostra sempre o número autorizado atual.
 - **Auth**: `POST /auth/login/` → `{access, refresh}` (em `localStorage`); em `401` o `api.js`
   tenta `POST /auth/refresh/` uma vez; se falhar, limpa tokens e dispara `auth:expirou`
   (o `AuthContext` desloga → guard manda ao login). Tokens nunca vão ao console.
@@ -452,3 +453,4 @@ pré-renderizadas, ex. `/peca/:id` e `/admin/*`, sobem por CSR). Preencher `SITE
   renderização, sem efeito) e "Desconectar" quando conectado. Helpers `whatsappStatus/Conectar/
   Desconectar` em `lib/api.js`; item "WhatsApp" no `AdminLayout`. O backend é proxy (chave da
   Evolution nunca chega ao navegador). `lint` (0 erros) e `npm run build` (SSG) ok.
+- **2026-06-22** — `/admin/whatsapp` ganhou seção **WhatsApp do dono**: mostra sempre o número autorizado atual, permite informar novo número em formato internacional (somente dígitos) e exige confirmação antes de salvar. Novos helpers `whatsappDono`/`atualizarWhatsappDono` em `lib/api.js`; `lint` sem erros (warnings antigos de react-refresh) e `npm run build` ok.

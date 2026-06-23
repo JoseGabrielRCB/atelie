@@ -153,3 +153,44 @@ def test_enviar_whatsapp_configurado_chama_envio(monkeypatch, settings):
         ("5581999990000", "alô"),
         ("5581988880000", "alô"),
     ]
+
+
+def test_admin_alterar_estoque_notifica_dono(capturar, api, admin_user, peca_ativa):
+    variacao = peca_ativa.variacoes.get(tamanho="P", cor="Azul")
+    api.force_authenticate(admin_user)
+
+    resp = api.patch(reverse("variacao-detail", args=[variacao.id]), {"estoque": 2})
+
+    assert resp.status_code == 200
+    assert any(
+        "Estoque atualizado no painel: Vestido Floral P/Azul — 3 → 2." in msg
+        for msg in capturar
+    )
+
+
+def test_admin_alterar_estoque_para_limiar_notifica_baixo(
+    capturar, api, admin_user, peca_ativa, settings
+):
+    settings.ESTOQUE_BAIXO_LIMIAR = 1
+    variacao = peca_ativa.variacoes.get(tamanho="P", cor="Azul")
+    api.force_authenticate(admin_user)
+
+    resp = api.patch(reverse("variacao-detail", args=[variacao.id]), {"estoque": 1})
+
+    assert resp.status_code == 200
+    assert any("Estoque atualizado no painel" in msg for msg in capturar)
+    assert any("Estoque baixo: Vestido Floral P/Azul = 1." in msg for msg in capturar)
+
+
+def test_admin_remover_variacao_notifica_dono(capturar, api, admin_user, peca_ativa):
+    variacao = peca_ativa.variacoes.get(tamanho="M", cor="Azul")
+    api.force_authenticate(admin_user)
+
+    resp = api.delete(reverse("variacao-detail", args=[variacao.id]))
+
+    assert resp.status_code == 204
+    assert any(
+        "Variação removida no painel: Vestido Floral M/Azul. Estoque anterior: 0."
+        in msg
+        for msg in capturar
+    )

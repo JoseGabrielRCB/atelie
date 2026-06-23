@@ -144,8 +144,9 @@ docker compose up redis evolution-api      # -d para segundo plano
 ```
 
 A Evolution fica em `http://localhost:8080` e usa: o Postgres `db` (banco próprio
-`evolution`), o `redis` para cache, e um **webhook global** que entrega os eventos
-ao backend em `http://backend:8000/api/webhooks/whatsapp/` (dentro da rede do compose).
+`evolution`), o `redis` para cache, e um **webhook global** que entrega o evento
+`messages.upsert` ao backend em `http://backend:8000/api/webhooks/whatsapp/`
+(dentro da rede do compose).
 
 ### 1. Banco `evolution` (garantido automaticamente)
 
@@ -162,8 +163,12 @@ inclusive quando o volume `atelie_pgdata` já existia (caso em que o script de
 ### 2. Variáveis de ambiente
 
 No `.env`, ajuste a seção do bot (veja `.env.example`): `EVOLUTION_API_KEY` (troque!),
-`EVOLUTION_INSTANCE` (ex.: `atelie-bot`), `WHATSAPP_DONO` (número do dono, só dígitos,
-formato internacional) e `ESTOQUE_BAIXO_LIMIAR`.
+`EVOLUTION_INSTANCE` (ex.: `atelie-bot`), `EVOLUTION_WEBHOOK_URL`,
+`WHATSAPP_DONO` (número do dono, só dígitos, formato internacional),
+`WHATSAPP_DONO_LID` (opcional, só para entrada quando a Evolution entrega `@lid`),
+`ESTOQUE_BAIXO_LIMIAR` e `EVOLUTION_WA_VERSION` (versão do WhatsApp Web usada pelo
+Baileys; hoje `2.3000.1035194821`). Em Docker, `ALLOWED_HOSTS` precisa incluir
+`backend`, porque a Evolution chama `http://backend:8000/api/webhooks/whatsapp/`.
 
 ### 3. Conectar o número (QR Code) — pelo painel (recomendado)
 
@@ -183,6 +188,8 @@ curl -X POST http://localhost:8080/instance/create \
 ```
 
 A sessão fica persistida no volume `atelie_evolution`.
+Ao conectar pelo painel, o backend também garante o webhook da instância na Evolution
+(`POST /webhook/set/{instância}`) com o evento `MESSAGES_UPSERT`.
 
 ### 4. Erros comuns (o que a tela `/admin/whatsapp` mostra)
 
@@ -192,7 +199,8 @@ A sessão fica persistida no volume `atelie_evolution`.
 | **Evolution indisponível** | `evolution-api` fora do ar / conexão recusada | `docker compose up -d evolution-api` (e `redis`) |
 | **Chave inválida** | `EVOLUTION_API_KEY` do backend ≠ a da Evolution | use a mesma chave no `.env` e no serviço |
 | **Erro na Evolution** | erro interno (5xx) — frequentemente o banco `evolution` ausente | suba com o `evolution-db-init` (já garante o banco); confira os logs da `evolution-api` |
+| **Mensagens chegam na Evolution mas não respondem** | webhook sem `WEBHOOK_EVENTS_MESSAGES_UPSERT`, instância sem `/webhook/set`, `backend` fora de `ALLOWED_HOSTS`, ou mensagem chegando como `@lid` não autorizado | conferir `/webhook/find/{instância}`, logs do backend e configurar `WHATSAPP_DONO_LID` |
 
-> O webhook global já aponta para o backend (`/api/webhooks/whatsapp/`). A rota que
-> recebe os eventos (`messages.upsert` etc.) é implementada no backend Django.
-
+> O webhook global já aponta para o backend (`/api/webhooks/whatsapp/`) e o compose
+> habilita explicitamente `WEBHOOK_EVENTS_MESSAGES_UPSERT=true`. Sem essa flag, a
+> Evolution mostra mensagens recebidas nos logs, mas não faz POST para o Django.

@@ -169,6 +169,9 @@ Django Admin como read-only (sem botão de adicionar).
 17. **Checkout hospedado (PCI)**: o cliente paga na página do Mercado Pago. Nenhum dado de cartão
     passa por nós nem é armazenado. Segredos (`MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET`) só em env;
     nunca logados; dados do cliente do Pedido (`nome`/`contato`) e do pagamento não são logados.
+18. **Estoque alterado no painel avisa o dono**: `PATCH /api/variacoes/{id}/` com mudança em
+    `estoque` dispara WhatsApp `"Estoque atualizado no painel..."` e reaproveita o alerta de
+    estoque baixo. `DELETE /api/variacoes/{id}/` dispara `"Variação removida no painel..."`.
 
 ## API
 
@@ -211,7 +214,11 @@ Base: `/api/`. Respostas de lista são **paginadas** (`PageNumberPagination`, `P
   webhook de ENTRADA do bot de WhatsApp do dono (Evolution API, evento `messages.upsert`). Privado
   de fato por **autorização de remetente**: só processa se o número (de `data.key.remoteJid`, sem o
   sufixo `@...` e só dígitos) estiver em `settings.WHATSAPP_DONO` — qualquer outro é **ignorado em
-  silêncio** (`200`, sem resposta). Ignora `fromMe: true` e mensagens sem texto. **Idempotência** por
+  silêncio** (`200`, sem resposta). Para números brasileiros, a comparação aceita a variação com e
+  sem o nono dígito (a Evolution/Baileys pode entregar o JID como `55+DDD+8 dígitos`). Quando a
+  Evolution entrega `remoteJid` como `...@lid`, o webhook também aceita ids configurados em
+  `WHATSAPP_DONO_LID` (só para ENTRADA; envio continua via `WHATSAPP_DONO`). Ignora
+  `fromMe: true` e mensagens sem texto. **Idempotência** por
   `MensagemWhatsApp` (`data.key.id`): reenvio do mesmo id é no-op. O texto (`conversation` ou
   `extendedTextMessage.text`) é roteado por `catalogo/comandos.interpretar(texto) -> str` e a resposta
   é enviada via `enviar_whatsapp`. **Sempre** retorna `200` rápido — erro de processamento é engolido
@@ -227,6 +234,7 @@ Base: `/api/`. Respostas de lista são **paginadas** (`PageNumberPagination`, `P
 ### Admin (exigem JWT — escrita bloqueada por `IsAuthenticatedOrReadOnly`)
 
 - CRUD completo: `categorias`, `cores`, `pecas`, `variacoes`, `imagens` (POST/PUT/PATCH/DELETE).
+  Em `variacoes`, alterar `estoque` ou remover a variação pelo painel dispara notificação ao dono.
 - **Encomendas** (`IsAuthenticated`): `GET /api/encomendas/` (lista paginada, imagens aninhadas,
   filtro `?status=`), `GET /api/encomendas/{id}/`, `PATCH /api/encomendas/{id}/` (atualiza
   `status`), `DELETE /api/encomendas/{id}/`. Permissão por ação (`get_permissions`: `create` =
@@ -243,6 +251,7 @@ Base: `/api/`. Respostas de lista são **paginadas** (`PageNumberPagination`, `P
   - `POST /api/whatsapp/conectar/` → garante a instância (cria se 404) e devolve o QR:
     `{ estado, qr_base64, pairing_code, mensagem }`.
   - `POST /api/whatsapp/desconectar/` → logout da instância → `{ ok, mensagem }`.
+  - `GET /api/whatsapp/dono/` → `{ numero, configurado }`; `PATCH/PUT /api/whatsapp/dono/` com `{ "numero" }` atualiza `WHATSAPP_DONO`, salva no `.env` e aplica em memória (admin/JWT).
 - `POST /api/auth/login/` — body `{ "username", "password" }` → `{ "access", "refresh" }`.
 - `POST /api/auth/refresh/` — body `{ "refresh" }` → `{ "access" }`.
 
@@ -297,8 +306,12 @@ host, `http://evolution-api:8080` na rede do compose), `EVOLUTION_API_KEY` (chav
 `5567999990000`) e `ESTOQUE_BAIXO_LIMIAR` (**int**, default 1 — variação com estoque `<=` esse
 valor dispara alerta). Lidos em `settings.py` como `settings.EVOLUTION_URL`/`EVOLUTION_API_KEY`/
 `EVOLUTION_INSTANCE`/`WHATSAPP_DONO` (list)/`ESTOQUE_BAIXO_LIMIAR` (int), defaults dev-safe
-(strings vazias / `[]` / `1` → recurso desligado). Opcional: `EVOLUTION_WEBHOOK_URL` (default
-`http://backend:8000/api/webhooks/whatsapp/`).
+(strings vazias / `[]` / `1` → recurso desligado). Opcionais: `EVOLUTION_WEBHOOK_URL` (default
+`http://backend:8000/api/webhooks/whatsapp/`), `WHATSAPP_DONO_LID` (lista de LIDs autorizados para
+mensagens recebidas quando a Evolution entrega `@lid`) e `EVOLUTION_WA_VERSION` (versão do WhatsApp
+Web usada pelo Baileys; atualizar quando o QR ficar preso em `connecting`; valor atual validado:
+`2.3000.1035194821`). No Docker, `ALLOWED_HOSTS` deve incluir `backend`, pois a Evolution chama o
+Django por `http://backend:8000`.
 
 ### Expiração de pedidos e signal
 
@@ -326,7 +339,10 @@ valor dispara alerta). Lidos em `settings.py` como `settings.EVOLUTION_URL`/`EVO
 - Gatilhos (PT-BR): **compra paga** → `"🛒 Venda paga: 1× Vestido Floral M/Azul — R$ 199,90.
   Estoque agora: 2."` (uma linha por item; lê estoque fresco pós-decremento); **estoque baixo** →
   `"⚠️ Estoque baixo: Vestido Floral M/Azul = 1."` para itens com `estoque <= ESTOQUE_BAIXO_LIMIAR`
-  (helper exportado `checar_estoque_baixo(variacoes)`, reusável); **nova encomenda** →
+  (helper exportado `checar_estoque_baixo(variacoes)`, reusável); **estoque alterado no painel** →
+  `"📦 Estoque atualizado no painel: Vestido Floral M/Azul — 3 → 1."` + checagem de estoque baixo;
+  **variação removida no painel** → `"🗑️ Variação removida no painel: Vestido Floral M/Azul.
+  Estoque anterior: 0."`; **nova encomenda** →
   `"📩 Nova encomenda de <nome> — '<descrição até ~60 chars>'. Veja no painel."` (único lugar com
   nome do cliente numa msg ao dono — vai só pro dono; o nome NUNCA é logado).
 - **Dependência `requests`** (em `requirements.txt`): já presente na imagem atual; se reconstruir
@@ -361,7 +377,8 @@ valor dispara alerta). Lidos em `settings.py` como `settings.EVOLUTION_URL`/`EVO
   A `evolution-api` `depends_on` o init (`condition: service_completed_successfully`), o `db`
   (healthy) e o `redis`. O `docker/db-init/01-evolution-db.sh` (init do volume) continua, mas o
   sistema **não depende mais só dele**. Cache no `redis`; **webhook global** para
-  `/api/webhooks/whatsapp/` no backend; sessão persistida no volume `atelie_evolution`. Número
+  `/api/webhooks/whatsapp/` no backend, com `WEBHOOK_EVENTS_MESSAGES_UPSERT=true` obrigatório para
+  mensagens de entrada chegarem ao Django; sessão persistida no volume `atelie_evolution`. Número
   **dedicado** (risco de banimento — nunca o principal da loja).
 - **Testes com pytest-django** (`pytest.ini` aponta `DJANGO_SETTINGS_MODULE=config.settings`).
 
@@ -469,7 +486,8 @@ valor dispara alerta). Lidos em `settings.py` como `settings.EVOLUTION_URL`/`EVO
   que cria a instância se preciso e devolve o QR, `desconectar()`; degrada sem exceção, nunca loga
   segredo/QR). Três views só-admin (`IsAuthenticated`): `GET /api/whatsapp/status/`,
   `POST /api/whatsapp/conectar/`, `POST /api/whatsapp/desconectar/`. O backend guarda a
-  `EVOLUTION_API_KEY` — o navegador nunca a recebe. Novo `test_conexao_whatsapp.py` (7 testes,
+  `EVOLUTION_API_KEY` — o navegador nunca a recebe. `conectar()` também garante
+  `POST /webhook/set/{instância}` com `MESSAGES_UPSERT`. Novo `test_conexao_whatsapp.py` (7 testes,
   Evolution mockada). Sem migrations. Suíte: **78 testes passando**.
 - **2026-06-22** — **Robustez do banco `evolution` + diagnóstico do bot**. Causa-raiz: o banco
   `evolution` só era criado no 1º init do volume; com `pgdata` pré-existente a Evolution subia
@@ -481,3 +499,15 @@ valor dispara alerta). Lidos em `settings.py` como `settings.EVOLUTION_URL`/`EVO
   ausente") e `conectar()` **recria a instância uma vez** quando o connect vem sem QR. Novos
   estados: `nao_autorizado`, `erro_evolution`. `test_conexao_whatsapp.py` passou a 11 testes
   (classificação de erro + retry de QR, tudo mockado). Suíte: **82 testes passando**.
+- **2026-06-22** — Correção operacional do QR da Evolution: a instância ficava em `connecting` e `/instance/connect` retornava `{ "count": 0 }` porque `CONFIG_SESSION_PHONE_VERSION` usava uma versão antiga do WhatsApp Web (`2.3000.1023204682`). Baileys no container reportou `2.3000.1035194821` como atual; `.env`, `.env.example` e fallback do `docker-compose.yml` foram atualizados para `EVOLUTION_WA_VERSION=2.3000.1035194821`.
+- **2026-06-22** — Painel do WhatsApp agora permite trocar o `WHATSAPP_DONO`: nova rota admin `GET/PATCH /api/whatsapp/dono/` (`IsAuthenticated`) em `catalogo/evolution.py`/`views.py`, valida número em formato internacional, persiste no `.env` e atualiza `settings.WHATSAPP_DONO` em memória. `test_conexao_whatsapp.py` passou a 17 testes.
+- **2026-06-22** — Correção do bot do dono para comandos e estoque manual: `docker-compose.yml`
+  agora habilita `WEBHOOK_EVENTS_MESSAGES_UPSERT=true` (sem isso a Evolution recebia `ajuda`, mas
+  não fazia POST no Django); o webhook aceita JID brasileiro com/sem nono dígito; e alterações/
+  remoções de `Variacao` pelo admin notificam o dono via WhatsApp. Testes adicionados em
+  `test_comandos.py` e `test_notificacoes.py`.
+- **2026-06-23** — Correção final do webhook WhatsApp: a Evolution fazia POST para
+  `http://backend:8000/api/webhooks/whatsapp/`, mas Django retornava `400 DisallowedHost` porque
+  `backend` não estava em `ALLOWED_HOSTS`. `docker-compose.yml` agora injeta `backend` no backend.
+  Também foi adicionada `WHATSAPP_DONO_LID` para autorizar mensagens que chegam como `...@lid`, e
+  `catalogo/evolution.py` passou a garantir `/webhook/set/{instância}` ao conectar pelo painel.

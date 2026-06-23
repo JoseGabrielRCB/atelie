@@ -42,6 +42,9 @@ services:
       # Dentro da rede do compose o banco é o serviço "db", não "localhost".
       DB_HOST: db
       DB_PORT: 5432
+      # A Evolution chama o Django por http://backend:8000; sem "backend" aqui
+      # o Django responde 400 DisallowedHost antes de chegar no webhook.
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1},backend
       # Superuser criado automaticamente no primeiro start (troque a senha!).
       DJANGO_SUPERUSER_USERNAME: ${DJANGO_SUPERUSER_USERNAME:-admin}
       DJANGO_SUPERUSER_EMAIL: ${DJANGO_SUPERUSER_EMAIL:-admin@atelie.local}
@@ -117,6 +120,12 @@ services:
       # Chave global da API — todo request precisa do header "apikey".
       AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
 
+      # Versão do WhatsApp Web usada pelo Baileys. Quando o WhatsApp invalida a
+      # versão embutida, o handshake dá timeout (408 "validating connection"),
+      # a instância entra em loop e o QR NUNCA é emitido. Fixe aqui uma versão
+      # atual (formato 2.3000.xxxxxxxxxx) para destravar. Veja o README.
+      CONFIG_SESSION_PHONE_VERSION: ${EVOLUTION_WA_VERSION:-2.3000.1035194821}
+
       # Banco: reaproveita o Postgres "db", porém num banco PRÓPRIO chamado "evolution".
       DATABASE_ENABLED: "true"
       DATABASE_PROVIDER: postgresql
@@ -129,11 +138,14 @@ services:
       CACHE_REDIS_PREFIX_KEY: evolution
       CACHE_LOCAL_ENABLED: "false"
 
-      # Webhook global: a Evolution entrega TODOS os eventos ao backend Django.
+      # Webhook global: entrega os eventos habilitados ao backend Django.
       # Dentro da rede do compose o backend é "backend:8000".
       WEBHOOK_GLOBAL_ENABLED: "true"
       WEBHOOK_GLOBAL_URL: ${EVOLUTION_WEBHOOK_URL:-http://backend:8000/api/webhooks/whatsapp/}
       WEBHOOK_GLOBAL_WEBHOOK_BY_EVENTS: "false"
+      # A Evolution v2 filtra eventos por flags; sem isto mensagens recebidas
+      # aparecem nos logs da Evolution, mas não chegam ao webhook do Django.
+      WEBHOOK_EVENTS_MESSAGES_UPSERT: "true"
     volumes:
       # Sessão/instâncias do WhatsApp (Baileys) persistidas entre reinícios.
       - atelie_evolution:/evolution/instances

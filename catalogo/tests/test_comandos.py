@@ -134,6 +134,37 @@ def test_webhook_remetente_autorizado_processa(api, peca_ativa, sem_rede, settin
     assert Variacao.objects.get(peca=peca_ativa, tamanho="P", cor="Azul").estoque == 2
 
 
+def test_webhook_remetente_brasil_sem_nono_digito_processa(
+    api, peca_ativa, sem_rede, settings
+):
+    settings.WHATSAPP_DONO = ["5567999990000"]
+    url = reverse("webhook-whatsapp")
+    payload = _evento(
+        "ajuda",
+        remote="556799990000@s.whatsapp.net",
+    )
+
+    resp = api.post(url, payload, format="json")
+
+    assert resp.status_code == 200
+    assert any("Comandos disponíveis" in m for m in sem_rede)
+
+
+def test_webhook_remetente_lid_autorizado_processa(api, peca_ativa, sem_rede, settings):
+    settings.WHATSAPP_DONO = ["5567996480852"]
+    settings.WHATSAPP_DONO_LID = ["87123629719655"]
+    url = reverse("webhook-whatsapp")
+    payload = _evento(
+        "ajuda",
+        remote="87123629719655@lid",
+    )
+
+    resp = api.post(url, payload, format="json")
+
+    assert resp.status_code == 200
+    assert any("Comandos disponíveis" in m for m in sem_rede)
+
+
 def test_webhook_from_me_ignorado(api, peca_ativa, sem_rede, settings):
     settings.WHATSAPP_DONO = [DONO]
     url = reverse("webhook-whatsapp")

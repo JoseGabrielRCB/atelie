@@ -1,15 +1,22 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Smartphone, QrCode, RefreshCw, LogOut } from "lucide-react";
-import { whatsappStatus, whatsappConectar, whatsappDesconectar } from "../../lib/api";
+import { Smartphone, QrCode, RefreshCw, LogOut, Save } from "lucide-react";
+import {
+  atualizarWhatsappDono,
+  whatsappConectar,
+  whatsappDesconectar,
+  whatsappDono,
+  whatsappStatus,
+} from "../../lib/api";
 import { Carregando, Erro } from "../../components/Estado";
-import { BotaoPrimario, BotaoSecundario, Feedback, Selo } from "../../components/admin/ui";
+import { BotaoPrimario, BotaoSecundario, Feedback, Selo, inputClasse } from "../../components/admin/ui";
 
 // Rótulo + cor do selo por estado de conexão (vindo do backend).
 const ESTADOS = {
   open: { rotulo: "Conectado", cor: "verde" },
   connecting: { rotulo: "Conectando…", cor: "acento" },
   qr: { rotulo: "Aguardando leitura do QR", cor: "acento" },
+  aguardando_qr: { rotulo: "QR não gerado", cor: "vermelho" },
   close: { rotulo: "Desconectado", cor: "cinza" },
   nao_criada: { rotulo: "Não conectado", cor: "cinza" },
   desconhecido: { rotulo: "Desconhecido", cor: "neutro" },
@@ -25,10 +32,28 @@ function fonteQr(base64) {
   return base64.startsWith("data:") ? base64 : `data:image/png;base64,${base64}`;
 }
 
+function apenasDigitos(valor) {
+  return String(valor || "").replace(/\D/g, "").slice(0, 15);
+}
+
+function formatarNumero(numero) {
+  const d = apenasDigitos(numero);
+  if (!d) return "Não configurado";
+  if (d.length === 13 && d.startsWith("55")) {
+    return `+${d.slice(0, 2)} (${d.slice(2, 4)}) ${d.slice(4, 9)}-${d.slice(9)}`;
+  }
+  if (d.length === 12 && d.startsWith("55")) {
+    return `+${d.slice(0, 2)} (${d.slice(2, 4)}) ${d.slice(4, 8)}-${d.slice(8)}`;
+  }
+  return `+${d}`;
+}
+
 export default function Whatsapp() {
   const qc = useQueryClient();
   const [qr, setQr] = useState(null); // { qr_base64, pairing_code, mensagem }
   const [feedback, setFeedback] = useState({ tipo: "", texto: "" });
+  const [feedbackDono, setFeedbackDono] = useState({ tipo: "", texto: "" });
+  const [numeroDonoEditado, setNumeroDonoEditado] = useState(null);
 
   const statusQ = useQuery({
     queryKey: ["admin", "whatsapp", "status"],
@@ -37,6 +62,13 @@ export default function Whatsapp() {
     refetchInterval: (query) =>
       qr && query.state.data?.estado !== "open" ? 4000 : false,
   });
+
+  const donoQ = useQuery({
+    queryKey: ["admin", "whatsapp", "dono"],
+    queryFn: whatsappDono,
+  });
+
+
 
   const estado = statusQ.data?.estado;
   // Mostra o QR enquanto ainda não conectou.
@@ -76,34 +108,97 @@ export default function Whatsapp() {
     onError: (e) => setFeedback({ tipo: "erro", texto: e.message }),
   });
 
-  if (statusQ.isLoading) return <Carregando texto="Carregando status do WhatsApp…" />;
+  const donoMut = useMutation({
+    mutationFn: atualizarWhatsappDono,
+    onSuccess: (dados) => {
+      setNumeroDonoEditado(dados.numero || "");
+      setFeedbackDono({ tipo: "sucesso", texto: dados.mensagem || "WhatsApp do dono atualizado." });
+      qc.invalidateQueries({ queryKey: ["admin", "whatsapp", "dono"] });
+    },
+    onError: (e) => setFeedbackDono({ tipo: "erro", texto: e.message }),
+  });
+
+  function salvarDono(e) {
+    e.preventDefault();
+    setFeedbackDono({ tipo: "", texto: "" });
+    const novo = apenasDigitos(numeroDono);
+    if (!novo) {
+      setFeedbackDono({ tipo: "erro", texto: "Informe o WhatsApp do dono." });
+      return;
+    }
+    const atual = donoQ.data?.numero || "";
+    if (novo === atual) {
+      setFeedbackDono({ tipo: "sucesso", texto: "Este já é o WhatsApp do dono." });
+      return;
+    }
+    const ok = window.confirm(
+      `Trocar o WhatsApp do dono de ${formatarNumero(atual)} para ${formatarNumero(novo)}?`
+    );
+    if (!ok) return;
+    donoMut.mutate(novo);
+  }
+
+  if (statusQ.isLoading || donoQ.isLoading) return <Carregando texto="Carregando WhatsApp…" />;
   if (statusQ.isError)
     return <Erro mensagem={statusQ.error.message} aoTentarNovamente={statusQ.refetch} />;
+  if (donoQ.isError)
+    return <Erro mensagem={donoQ.error.message} aoTentarNovamente={donoQ.refetch} />;
 
+  const numeroDono = numeroDonoEditado ?? donoQ.data?.numero ?? "";
   const info = ESTADOS[estado] ?? ESTADOS.desconhecido;
   const conectado = estado === "open";
   const naoConfigurado = estado === "nao_configurado";
+  const donoAtual = donoQ.data?.numero || "";
 
   return (
-    <section className="max-w-2xl">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="flex items-center gap-2 font-display text-3xl font-semibold">
-          <Smartphone size={26} aria-hidden="true" className="text-acento-escuro" />
-          WhatsApp
-        </h1>
-        <Selo cor={info.cor}>{info.rotulo}</Selo>
-      </div>
-      <p className="mb-6 text-sm text-texto-suave">
-        Conecte aqui o número <strong>dedicado</strong> do bot (nunca o número principal do
-        ateliê). Ele envia avisos de venda, encomenda e estoque baixo — e aceita comandos de
-        estoque por mensagem.
-      </p>
-
-      {feedback.texto && (
-        <div className="mb-4">
-          <Feedback tipo={feedback.tipo}>{feedback.texto}</Feedback>
+    <section className="max-w-2xl space-y-6">
+      <div>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+          <h1 className="flex items-center gap-2 font-display text-3xl font-semibold">
+            <Smartphone size={26} aria-hidden="true" className="text-acento-escuro" />
+            WhatsApp
+          </h1>
+          <Selo cor={info.cor}>{info.rotulo}</Selo>
         </div>
-      )}
+        <p className="text-sm text-texto-suave">
+          Conecte aqui o número <strong>dedicado</strong> do bot (nunca o número principal do
+          ateliê). Ele envia avisos de venda, encomenda e estoque baixo — e aceita comandos de
+          estoque por mensagem.
+        </p>
+      </div>
+
+      {feedback.texto && <Feedback tipo={feedback.tipo}>{feedback.texto}</Feedback>}
+
+      <div className="rounded-lg border border-borda bg-superficie p-6">
+        <h2 className="font-display text-2xl font-semibold text-texto">WhatsApp do dono</h2>
+        <p className="mt-1 text-sm text-texto-suave">
+          Atual: <strong className="text-texto">{formatarNumero(donoAtual)}</strong>
+        </p>
+        <form onSubmit={salvarDono} className="mt-4 space-y-3">
+          <div>
+            <label htmlFor="whatsapp-dono" className="mb-1 block text-sm font-medium text-texto">
+              Novo WhatsApp autorizado
+            </label>
+            <input
+              id="whatsapp-dono"
+              type="tel"
+              inputMode="numeric"
+              value={numeroDono}
+              onChange={(e) => setNumeroDonoEditado(apenasDigitos(e.target.value))}
+              placeholder="5567999990000"
+              className={inputClasse}
+            />
+            <p className="mt-1 text-xs text-texto-suave">
+              Use formato internacional: DDI + DDD + número, somente dígitos.
+            </p>
+          </div>
+          {feedbackDono.texto && <Feedback tipo={feedbackDono.tipo}>{feedbackDono.texto}</Feedback>}
+          <BotaoPrimario type="submit" disabled={donoMut.isPending}>
+            <Save size={18} aria-hidden="true" />
+            {donoMut.isPending ? "Salvando…" : "Salvar WhatsApp do dono"}
+          </BotaoPrimario>
+        </form>
+      </div>
 
       {naoConfigurado && (
         <div className="rounded-lg border border-erro/30 bg-erro/5 p-4 text-sm text-texto">

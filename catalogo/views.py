@@ -36,7 +36,12 @@ from .models import (
     Pedido,
     Variacao,
 )
-from .notificacoes import enviar_whatsapp
+from .notificacoes import (
+    enviar_whatsapp,
+    notificar_estoque_alterado,
+    notificar_variacao_removida,
+    _rotulo_variacao,
+)
 from .serializers import (
     CategoriaSerializer,
     CheckoutSerializer,
@@ -93,6 +98,18 @@ class VariacaoViewSet(viewsets.ModelViewSet):
     queryset = Variacao.objects.select_related("peca").all()
     serializer_class = VariacaoSerializer
     filterset_fields = ["peca", "tamanho", "cor"]
+
+    def perform_update(self, serializer):
+        estoque_anterior = serializer.instance.estoque
+        variacao = serializer.save()
+        if "estoque" in serializer.validated_data:
+            notificar_estoque_alterado(variacao, estoque_anterior)
+
+    def perform_destroy(self, instance):
+        rotulo = _rotulo_variacao(instance)
+        estoque_anterior = instance.estoque
+        instance.delete()
+        notificar_variacao_removida(rotulo, estoque_anterior)
 
 
 class ImagemViewSet(viewsets.ModelViewSet):
@@ -415,6 +432,21 @@ def _so_digitos(valor) -> str:
     return "".join(c for c in str(valor or "") if c.isdigit())
 
 
+def _variantes_numero_whatsapp(valor) -> set[str]:
+    """Variações aceitas para números BR com/sem nono dígito no JID."""
+    numero = _so_digitos(valor)
+    variantes = {numero} if numero else set()
+
+    # WhatsApp/Baileys às vezes entrega JIDs brasileiros sem o nono dígito:
+    # 55 + DDD + 9 + 8 dígitos -> 55 + DDD + 8 dígitos.
+    if numero.startswith("55") and len(numero) == 13 and numero[4] == "9":
+        variantes.add(numero[:4] + numero[5:])
+    elif numero.startswith("55") and len(numero) == 12:
+        variantes.add(numero[:4] + "9" + numero[4:])
+
+    return variantes
+
+
 @method_decorator(csrf_exempt, name="dispatch")
 class WhatsappWebhookView(APIView):
     """Recebe eventos ``messages.upsert`` da Evolution API (webhook de entrada).
@@ -457,7 +489,13 @@ class WhatsappWebhookView(APIView):
 
         # Autorização: só o(s) dono(s).
         remetente = _so_digitos((chave.get("remoteJid") or "").split("@")[0])
-        autorizados = {_so_digitos(n) for n in getattr(settings, "WHATSAPP_DONO", [])}
+        autorizados = set()
+        for numero in getattr(settings, "WHATSAPP_DONO", []):
+            autorizados.update(_variantes_numero_whatsapp(numero))
+        for lid in getattr(settings, "WHATSAPP_DONO_LID", []):
+            lid = _so_digitos(lid)
+            if lid:
+                autorizados.add(lid)
         if not remetente or remetente not in autorizados:
             return  # ignora em silêncio
 
@@ -499,6 +537,30 @@ class PedidoViewSet(viewsets.ReadOnlyModelViewSet):
 # O backend é o PROXY: guarda a EVOLUTION_API_KEY e fala com a Evolution; o
 # navegador (admin) nunca vê o segredo. Todas as ações exigem JWT de admin.
 
+
+
+
+class WhatsappDonoView(APIView):
+    """Consulta e atualiza o numero autorizado do dono (admin)."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        return Response(evolution.whatsapp_dono_atual())
+
+    def put(self, request, *args, **kwargs):
+        return self._salvar(request)
+
+    def patch(self, request, *args, **kwargs):
+        return self._salvar(request)
+
+    def _salvar(self, request):
+        numero = request.data.get("numero", "")
+        try:
+            dados = evolution.atualizar_whatsapp_dono(numero)
+        except ValueError as exc:
+            raise serializers.ValidationError({"numero": [str(exc)]})
+        return Response({**dados, "mensagem": "WhatsApp do dono atualizado."})
 
 class WhatsappConexaoStatusView(APIView):
     """Estado da conexão do WhatsApp do dono (admin)."""

@@ -21,6 +21,7 @@ env = environ.Env(
     CORS_ALLOWED_ORIGINS=(list, []),
     DB_PORT=(int, 5432),
     WHATSAPP_DONO=(list, []),
+    WHATSAPP_DONO_LID=(list, []),
     ESTOQUE_BAIXO_LIMIAR=(int, 1),
 )
 
@@ -189,8 +190,18 @@ EVOLUTION_URL = env("EVOLUTION_URL", default="")
 EVOLUTION_API_KEY = env("EVOLUTION_API_KEY", default="")
 # Nome da instância criada na Evolution (ex.: "atelie-bot").
 EVOLUTION_INSTANCE = env("EVOLUTION_INSTANCE", default="")
+# URL que a Evolution chama para entregar mensagens recebidas.
+EVOLUTION_WEBHOOK_URL = env(
+    "EVOLUTION_WEBHOOK_URL",
+    default="http://backend:8000/api/webhooks/whatsapp/",
+)
 # Números autorizados (LISTA, separados por vírgula). Recebem alertas e podem
 # comandar o bot. Apenas dígitos, formato internacional (ex.: 5567999990000).
 WHATSAPP_DONO = env("WHATSAPP_DONO")
+# LIDs autorizados para ENTRADA (LISTA, separados por vírgula). A Evolution/
+# Baileys pode entregar mensagens como "8712...@lid" em vez do telefone.
+# Estes ids só autorizam comandos recebidos; o envio continua indo ao telefone
+# em WHATSAPP_DONO.
+WHATSAPP_DONO_LID = env("WHATSAPP_DONO_LID")
 # Limiar de estoque baixo: variações com estoque <= este valor disparam alerta.
 ESTOQUE_BAIXO_LIMIAR = env("ESTOQUE_BAIXO_LIMIAR")

@@ -399,3 +399,6 @@ export const whatsappConectar = () =>
   request("/whatsapp/conectar/", { method: "POST", auth: true });
 export const whatsappDesconectar = () =>
   request("/whatsapp/desconectar/", { method: "POST", auth: true });
+export const whatsappDono = () => request("/whatsapp/dono/", { auth: true });
+export const atualizarWhatsappDono = (numero) =>
+  request("/whatsapp/dono/", { method: "PATCH", body: { numero }, auth: true });

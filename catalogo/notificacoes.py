@@ -130,6 +130,26 @@ def checar_estoque_baixo(variacoes) -> None:
             )
 
 
+def notificar_estoque_alterado(variacao, estoque_anterior: int) -> None:
+    """Avisa o dono quando o admin altera estoque manualmente pelo painel."""
+    if estoque_anterior == variacao.estoque:
+        return
+
+    enviar_whatsapp(
+        "📦 Estoque atualizado no painel: "
+        f"{_rotulo_variacao(variacao)} — {estoque_anterior} → {variacao.estoque}."
+    )
+    checar_estoque_baixo([variacao])
+
+
+def notificar_variacao_removida(rotulo: str, estoque_anterior: int) -> None:
+    """Avisa o dono quando uma variação é removida pelo painel admin."""
+    enviar_whatsapp(
+        f"🗑️ Variação removida no painel: {rotulo}. "
+        f"Estoque anterior: {estoque_anterior}."
+    )
+
+
 # --------------------------------------------------------------------------
 # Receivers de sinais
 # --------------------------------------------------------------------------

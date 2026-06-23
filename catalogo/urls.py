@@ -17,6 +17,7 @@ from .views import (
     WhatsappConectarView,
     WhatsappConexaoStatusView,
     WhatsappDesconectarView,
+    WhatsappDonoView,
     WhatsappWebhookView,
 )
 
@@ -47,5 +48,6 @@ urlpatterns = [
     path("whatsapp/status/", WhatsappConexaoStatusView.as_view(), name="whatsapp-status"),
     path("whatsapp/conectar/", WhatsappConectarView.as_view(), name="whatsapp-conectar"),
     path("whatsapp/desconectar/", WhatsappDesconectarView.as_view(), name="whatsapp-desconectar"),
+    path("whatsapp/dono/", WhatsappDonoView.as_view(), name="whatsapp-dono"),
     path("", include(router.urls)),
 ]

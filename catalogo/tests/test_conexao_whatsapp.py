@@ -110,10 +110,55 @@ def _config(settings):
 def test_estado_chave_invalida(_config, monkeypatch):
     import requests
 
+    # Chave inválida na Evolution responde 401 (e SÓ 401 vira "chave inválida").
     monkeypatch.setattr(requests, "get", lambda *a, **k: _Resp(401))
     resultado = evolution.estado_conexao()
     assert resultado["estado"] == "nao_autorizado"
     assert "EVOLUTION_API_KEY" in resultado["mensagem"]
+
+
+def test_403_nao_e_chave_invalida(_config, monkeypatch):
+    """403 da Evolution é regra de negócio (não auth) → NÃO pode virar 'chave inválida'."""
+    import requests
+
+    monkeypatch.setattr(requests, "get", lambda *a, **k: _Resp(403))
+    resultado = evolution.estado_conexao()
+    assert resultado["estado"] == "erro_evolution"
+    assert "EVOLUTION_API_KEY" not in resultado["mensagem"]
+
+
+def test_conectar_connect_sem_qr_403_no_create_nao_vira_chave_invalida(_config, monkeypatch):
+    """Regressão: connect sem QR + create 403 ('já existe') NÃO pode dizer 'chave inválida'.
+
+    Antes, o fallback recriava sem apagar e o 403 'name already in use' era
+    classificado como chave inválida. Agora recriamos do zero (delete + create).
+    """
+    import requests
+
+    monkeypatch.setattr(
+        evolution,
+        "estado_conexao",
+        lambda: {"configurado": True, "estado": "connecting", "instancia": "atelie-bot"},
+    )
+    # connect responde 200 sem QR (instância presa em "connecting").
+    monkeypatch.setattr(requests, "get", lambda *a, **k: _Resp(200, {"count": 0}))
+    apagou = {"chamou": False}
+
+    def _delete(*a, **k):
+        apagou["chamou"] = True
+        return _Resp(200, {"status": "SUCCESS"})
+
+    monkeypatch.setattr(requests, "delete", _delete)
+    # após o delete, o create devolve o QR.
+    monkeypatch.setattr(
+        requests,
+        "post",
+        lambda *a, **k: _Resp(201, {"qrcode": {"base64": "data:image/png;base64,QQQ", "pairingCode": "P1"}}),
+    )
+    resultado = evolution.conectar()
+    assert apagou["chamou"] is True  # recriou do zero
+    assert resultado["estado"] == "qr"
+    assert resultado["qr_base64"].endswith("QQQ")
 
 
 def test_estado_erro_interno_evolution(_config, monkeypatch):
@@ -148,6 +193,8 @@ def test_conectar_recria_quando_connect_sem_qr(_config, monkeypatch):
     )
     # /instance/connect responde 200 mas sem base64/pairingCode.
     monkeypatch.setattr(requests, "get", lambda *a, **k: _Resp(200, {}))
+    # delete da instância antiga (recriação do zero) — best-effort.
+    monkeypatch.setattr(requests, "delete", lambda *a, **k: _Resp(200, {"status": "SUCCESS"}))
     # /instance/create devolve o QR aninhado (formato da v2).
     monkeypatch.setattr(
         requests,
@@ -171,3 +218,63 @@ def test_extrair_qr_normaliza_formatos():
         "qr_base64": "Y",
         "pairing_code": "Q",
     }
+
+
+def test_configurar_webhook_usa_endpoint_da_instancia(_config, settings, monkeypatch):
+    import requests
+
+    settings.EVOLUTION_WEBHOOK_URL = "http://backend:8000/api/webhooks/whatsapp/"
+    chamadas = []
+
+    def _post(url, **kwargs):
+        chamadas.append((url, kwargs))
+        return _Resp(201, {"id": "webhook-1"})
+
+    monkeypatch.setattr(requests, "post", _post)
+
+    assert evolution._configurar_webhook() is True
+    assert chamadas[0][0].endswith("/webhook/set/atelie-bot")
+    assert chamadas[0][1]["json"] == {
+        "webhook": {
+            "enabled": True,
+            "url": "http://backend:8000/api/webhooks/whatsapp/",
+            "webhookByEvents": False,
+            "events": ["MESSAGES_UPSERT"],
+        }
+    }
+
+
+def test_whatsapp_dono_exige_autenticacao(api):
+    resp = api.get(reverse("whatsapp-dono"))
+    assert resp.status_code == 401
+
+
+def test_whatsapp_dono_mostra_numero_atual(api, admin_user, settings):
+    settings.WHATSAPP_DONO = ["5567999990000"]
+    api.force_authenticate(user=admin_user)
+    resp = api.get(reverse("whatsapp-dono"))
+    assert resp.status_code == 200
+    assert resp.data == {"numero": "5567999990000", "configurado": True}
+
+
+def test_whatsapp_dono_atualiza_env_e_settings(api, admin_user, settings, tmp_path):
+    settings.BASE_DIR = tmp_path
+    settings.WHATSAPP_DONO = ["5567999990000"]
+    env_path = tmp_path / ".env"
+    env_path.write_text("WHATSAPP_DONO=5567999990000\nOUTRA=ok\n", encoding="utf-8")
+
+    api.force_authenticate(user=admin_user)
+    resp = api.patch(reverse("whatsapp-dono"), {"numero": "+55 (67) 92072-9997"}, format="json")
+
+    assert resp.status_code == 200
+    assert resp.data["numero"] == "5567920729997"
+    assert settings.WHATSAPP_DONO == ["5567920729997"]
+    assert "WHATSAPP_DONO=5567920729997" in env_path.read_text(encoding="utf-8")
+    assert "OUTRA=ok" in env_path.read_text(encoding="utf-8")
+
+
+def test_whatsapp_dono_valida_formato(api, admin_user):
+    api.force_authenticate(user=admin_user)
+    resp = api.patch(reverse("whatsapp-dono"), {"numero": "123"}, format="json")
+    assert resp.status_code == 400
+    assert "numero" in resp.data
