@@ -35,7 +35,7 @@ export default function Login() {
     <div className="flex min-h-screen items-center justify-center bg-fundo px-4">
       <div className="w-full max-w-sm">
         <div className="mb-6 text-center">
-          <h1 className="font-display text-3xl font-semibold text-texto">Atelie ++</h1>
+          <h1 className="font-display text-3xl font-semibold text-texto">Ateliê da Sete</h1>
           <p className="mt-1 text-sm text-texto-suave">Painel de administração</p>
         </div>
 

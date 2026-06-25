@@ -34,9 +34,11 @@ import { useAdminEncomendas } from "../../hooks/useAdminEncomendas";
 import { useAdminPedidos } from "../../hooks/useAdminPedidos";
 import { responderPergunta } from "../../lib/perguntas";
 import { useAuth } from "../../context/AuthContext";
+import { usePaginacao } from "../../hooks/usePaginacao";
 import { Carregando, Erro } from "../../components/Estado";
 import Preco from "../../components/Preco";
 import Modal from "../../components/admin/Modal";
+import { Paginacao } from "../../components/admin/Paginacao";
 import { Selo, inputClasse } from "../../components/admin/ui";
 
 // Paleta dos gráficos (tokens do STYLE.md).
@@ -138,9 +140,9 @@ export default function Dashboard() {
     { id: "encomendas", titulo: "Encomendas novas", valor: encomendasRecebidas.length, destaque: encomendasRecebidas.length > 0, Icone: Inbox, pagina: "/admin/encomendas" },
     ...(podeFinanceiro
       ? [
-          { id: "vendas", titulo: "Vendas pagas (mês)", valor: vendasPagasMes.length, Icone: BadgeDollarSign, pagina: "/admin/vendas" },
-          { id: "aguardando", titulo: "Aguardando pagamento", valor: pedidosAguardando.length, destaque: pedidosAguardando.length > 0, Icone: Clock, pagina: "/admin/vendas" },
-        ]
+        { id: "vendas", titulo: "Vendas pagas (mês)", valor: vendasPagasMes.length, Icone: BadgeDollarSign, pagina: "/admin/vendas" },
+        { id: "aguardando", titulo: "Aguardando pagamento", valor: pedidosAguardando.length, destaque: pedidosAguardando.length > 0, Icone: Clock, pagina: "/admin/vendas" },
+      ]
       : []),
   ];
 
@@ -178,29 +180,36 @@ export default function Dashboard() {
   if (pecasQ.isError)
     return <Erro mensagem={pecasQ.error.message} aoTentarNovamente={pecasQ.refetch} />;
 
-  // Conteúdo do modal de detalhe da métrica ativa.
+  // Conteúdo do modal de detalhe da métrica ativa (lista paginada, 10/página).
   function detalhe(id) {
     switch (id) {
       case "total":
-        return <ListaPecas itens={pecas} />;
+        return <DetalheLista itens={pecas} vazio="Nenhuma peça." rotulo="peças" render={linhaPeca} />;
       case "ativas":
-        return <ListaPecas itens={ativas} />;
+        return <DetalheLista itens={ativas} vazio="Nenhuma peça ativa." rotulo="peças" render={linhaPeca} />;
       case "ocultas":
-        return <ListaPecas itens={ocultas} />;
+        return <DetalheLista itens={ocultas} vazio="Nenhuma peça oculta." rotulo="peças" render={linhaPeca} />;
       case "destaques":
-        return <ListaPecas itens={destaques} vazio="Nenhuma peça em destaque." />;
+        return <DetalheLista itens={destaques} vazio="Nenhuma peça em destaque." rotulo="peças" render={linhaPeca} />;
       case "variacoes":
-        return <ListaVariacoesPorPeca pecas={pecas} />;
+        return (
+          <DetalheLista
+            itens={pecas.filter((p) => (p.variacoes ?? []).length > 0)}
+            vazio="Nenhuma variação cadastrada."
+            rotulo="peças"
+            render={linhaVariacoesPorPeca}
+          />
+        );
       case "esgotadas":
-        return <ListaVariacoesEsgotadas itens={esgotadas} />;
+        return <DetalheLista itens={esgotadas} vazio="Nenhuma variação esgotada." rotulo="variações" render={linhaVariacaoEsgotada} />;
       case "categorias":
-        return <ListaCategorias itens={categoriasComContagem} />;
+        return <DetalheLista itens={categoriasComContagem} vazio="Nenhuma categoria." rotulo="categorias" render={linhaCategoria} />;
       case "encomendas":
-        return <ListaEncomendas itens={encomendasRecebidas} />;
+        return <DetalheLista itens={encomendasRecebidas} vazio="Nenhuma encomenda nova." rotulo="encomendas" render={linhaEncomenda} />;
       case "vendas":
-        return <ListaPedidos itens={vendasPagasMes} />;
+        return <DetalheLista itens={vendasPagasMes} vazio="Nenhum pedido." rotulo="pedidos" render={linhaPedido} />;
       case "aguardando":
-        return <ListaPedidos itens={pedidosAguardando} />;
+        return <DetalheLista itens={pedidosAguardando} vazio="Nenhum pedido." rotulo="pedidos" render={linhaPedido} />;
       default:
         return null;
     }
@@ -370,132 +379,101 @@ function RotuloCentroRosca({ viewBox, total }) {
 }
 
 // --------------------------------------------------------------------------
-// Listas de detalhe (reusam selos/cores; texto longo truncado).
+// Lista de detalhe paginada (10/página) — reusa usePaginacao + Paginacao. Cada
+// métrica passa `render(item)` para a linha (selos/cores; texto truncado).
 // --------------------------------------------------------------------------
-function Lista({ children }) {
-  return <ul className="divide-y divide-borda">{children}</ul>;
-}
-
-function VazioDetalhe({ texto = "Nada por aqui." }) {
-  return <p className="py-6 text-center text-sm text-texto-suave">{texto}</p>;
-}
-
-function ListaPecas({ itens, vazio = "Nenhuma peça." }) {
-  if (!itens.length) return <VazioDetalhe texto={vazio} />;
+function DetalheLista({ itens, render, vazio = "Nada por aqui.", rotulo = "itens" }) {
+  const pag = usePaginacao(itens, { resetKey: String(itens.length) });
+  if (!itens.length) {
+    return <p className="py-6 text-center text-sm text-texto-suave">{vazio}</p>;
+  }
   return (
-    <Lista>
-      {itens.map((p) => (
-        <li key={p.id} className="flex items-center justify-between gap-3 py-2">
-          <div className="min-w-0">
-            <p className="truncate font-medium text-texto" title={p.nome}>
-              {p.nome}
-            </p>
-            <p className="truncate text-xs text-texto-suave">{p.categoria_nome}</p>
-          </div>
-          {p.ativo ? <Selo cor="verde">Ativa</Selo> : <Selo cor="cinza">Oculta</Selo>}
-        </li>
-      ))}
-    </Lista>
+    <>
+      <ul className="divide-y divide-borda">{pag.itensPagina.map(render)}</ul>
+      <Paginacao
+        pagina={pag.pagina}
+        totalPaginas={pag.totalPaginas}
+        total={pag.total}
+        porPagina={pag.porPagina}
+        aoMudar={pag.setPagina}
+        rotuloItens={rotulo}
+      />
+    </>
   );
 }
 
-function ListaVariacoesPorPeca({ pecas }) {
-  const comVar = pecas.filter((p) => (p.variacoes ?? []).length > 0);
-  if (!comVar.length) return <VazioDetalhe texto="Nenhuma variação cadastrada." />;
+function linhaPeca(p) {
   return (
-    <Lista>
-      {comVar.map((p) => (
-        <li key={p.id} className="flex items-center justify-between gap-3 py-2">
-          <span className="min-w-0 truncate font-medium text-texto" title={p.nome}>
-            {p.nome}
-          </span>
-          <span className="shrink-0 text-sm text-texto-suave">
-            {p.variacoes.length} {p.variacoes.length === 1 ? "variação" : "variações"}
-          </span>
-        </li>
-      ))}
-    </Lista>
+    <li key={p.id} className="flex items-center justify-between gap-3 py-2">
+      <div className="min-w-0">
+        <p className="truncate font-medium text-texto" title={p.nome}>{p.nome}</p>
+        <p className="truncate text-xs text-texto-suave">{p.categoria_nome}</p>
+      </div>
+      {p.ativo ? <Selo cor="verde">Ativa</Selo> : <Selo cor="cinza">Oculta</Selo>}
+    </li>
   );
 }
 
-function ListaVariacoesEsgotadas({ itens }) {
-  if (!itens.length) return <VazioDetalhe texto="Nenhuma variação esgotada. 🎉" />;
+function linhaVariacoesPorPeca(p) {
+  const n = (p.variacoes ?? []).length;
   return (
-    <Lista>
-      {itens.map((v) => (
-        <li key={v.id} className="flex items-center justify-between gap-3 py-2">
-          <span className="min-w-0 truncate text-texto" title={v.pecaNome}>
-            <span className="font-medium">{v.pecaNome}</span>
-            <span className="text-texto-suave"> — {v.tamanho || "—"} / {v.cor || "—"}</span>
-          </span>
-          <Selo cor="vermelho">Esgotado</Selo>
-        </li>
-      ))}
-    </Lista>
+    <li key={p.id} className="flex items-center justify-between gap-3 py-2">
+      <span className="min-w-0 truncate font-medium text-texto" title={p.nome}>{p.nome}</span>
+      <span className="shrink-0 text-sm text-texto-suave">
+        {n} {n === 1 ? "variação" : "variações"}
+      </span>
+    </li>
   );
 }
 
-function ListaCategorias({ itens }) {
-  if (!itens.length) return <VazioDetalhe texto="Nenhuma categoria." />;
+function linhaVariacaoEsgotada(v) {
   return (
-    <Lista>
-      {itens.map((c) => (
-        <li key={c.id} className="flex items-center justify-between gap-3 py-2">
-          <span className="min-w-0 truncate font-medium text-texto" title={c.nome}>
-            {c.nome}
-          </span>
-          <span className="shrink-0 text-sm text-texto-suave">
-            {c.qtd} {c.qtd === 1 ? "peça" : "peças"}
-          </span>
-        </li>
-      ))}
-    </Lista>
+    <li key={v.id} className="flex items-center justify-between gap-3 py-2">
+      <span className="min-w-0 truncate text-texto" title={v.pecaNome}>
+        <span className="font-medium">{v.pecaNome}</span>
+        <span className="text-texto-suave"> — {v.tamanho || "—"} / {v.cor || "—"}</span>
+      </span>
+      <Selo cor="vermelho">Esgotado</Selo>
+    </li>
   );
 }
 
-function ListaEncomendas({ itens }) {
-  if (!itens.length) return <VazioDetalhe texto="Nenhuma encomenda nova." />;
+function linhaCategoria(c) {
   return (
-    <Lista>
-      {itens.map((e) => (
-        <li key={e.id} className="flex items-center justify-between gap-3 py-2">
-          <div className="min-w-0">
-            <p className="truncate font-medium text-texto" title={e.nome}>
-              {e.nome}
-            </p>
-            <p className="truncate text-xs text-texto-suave" title={e.descricao}>
-              {e.descricao}
-            </p>
-          </div>
-          <span className="shrink-0 text-xs text-texto-suave">{dataCurta(e.criado_em)}</span>
-        </li>
-      ))}
-    </Lista>
+    <li key={c.id} className="flex items-center justify-between gap-3 py-2">
+      <span className="min-w-0 truncate font-medium text-texto" title={c.nome}>{c.nome}</span>
+      <span className="shrink-0 text-sm text-texto-suave">
+        {c.qtd} {c.qtd === 1 ? "peça" : "peças"}
+      </span>
+    </li>
   );
 }
 
-function ListaPedidos({ itens }) {
-  if (!itens.length) return <VazioDetalhe texto="Nenhum pedido." />;
+function linhaEncomenda(e) {
   return (
-    <Lista>
-      {itens.map((p) => {
-        const info = STATUS_PEDIDO[p.status] ?? { rotulo: p.status, cor: "neutro" };
-        return (
-          <li key={p.id} className="flex items-center justify-between gap-3 py-2">
-            <div className="min-w-0">
-              <p className="truncate font-medium text-texto" title={p.nome}>
-                {p.nome}
-              </p>
-              <p className="text-xs text-texto-suave">{dataCurta(p.criado_em)}</p>
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <Preco valor={p.total} className="text-texto" />
-              <Selo cor={info.cor}>{info.rotulo}</Selo>
-            </div>
-          </li>
-        );
-      })}
-    </Lista>
+    <li key={e.id} className="flex items-center justify-between gap-3 py-2">
+      <div className="min-w-0">
+        <p className="truncate font-medium text-texto" title={e.nome}>{e.nome}</p>
+        <p className="truncate text-xs text-texto-suave" title={e.descricao}>{e.descricao}</p>
+      </div>
+      <span className="shrink-0 text-xs text-texto-suave">{dataCurta(e.criado_em)}</span>
+    </li>
+  );
+}
+
+function linhaPedido(p) {
+  const info = STATUS_PEDIDO[p.status] ?? { rotulo: p.status, cor: "neutro" };
+  return (
+    <li key={p.id} className="flex items-center justify-between gap-3 py-2">
+      <div className="min-w-0">
+        <p className="truncate font-medium text-texto" title={p.nome}>{p.nome}</p>
+        <p className="text-xs text-texto-suave">{dataCurta(p.criado_em)}</p>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <Preco valor={p.total} className="text-texto" />
+        <Selo cor={info.cor}>{info.rotulo}</Selo>
+      </div>
+    </li>
   );
 }
 

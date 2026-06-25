@@ -12,6 +12,31 @@ const btnPrimario =
 const btnSecundario =
   "inline-flex items-center justify-center rounded-lg border border-borda bg-superficie px-6 py-3 font-medium text-texto transition hover:border-acento-escuro hover:text-acento-escuro focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-escuro";
 
+// Mensagem padrão pré-preenchida no WhatsApp (microcopy da marca).
+const MSG_WHATS =
+  "Saravá! Vim pelo site do Ateliê da Sete e quero acertar a minha roupa de trabalho.";
+
+// Link de WhatsApp quando configurado; senão, cai na página de encomenda.
+function AcaoWhats({ children, className }) {
+  if (whatsappConfigurado) {
+    return (
+      <a
+        href={linkWhatsappTexto(MSG_WHATS)}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={className}
+      >
+        {children}
+      </a>
+    );
+  }
+  return (
+    <Link to="/encomenda" className={className}>
+      {children}
+    </Link>
+  );
+}
+
 export default function Home() {
   useSeo(getMeta("/"));
   return (
@@ -19,8 +44,8 @@ export default function Home() {
       <Hero />
       <PecasDestaque />
       <Sobre />
-      <Oferecemos />
-      <ComoFunciona />
+      <OQueCosturamos />
+      <Diferenciais />
       <Depoimentos />
       <Faq />
       <CtaFinal />
@@ -32,30 +57,34 @@ export default function Home() {
 function Hero() {
   return (
     <section className="pt-4 text-center sm:pt-8">
-      <h1 className="mx-auto max-w-3xl font-display text-4xl font-semibold leading-tight text-texto sm:text-5xl">
-        Costura sob medida em Campo Grande, feita à mão no Ateliê ++
+      <p className="text-sm font-medium uppercase tracking-wide text-acento">
+        Ateliê da Sete · Roupas e paramentos · de Campo Grande/MS para todo o Brasil
+      </p>
+      <h1 className="mx-auto mt-3 max-w-3xl font-display text-4xl font-semibold leading-tight text-texto sm:text-5xl">
+        Sua roupa de trabalho, no fundamento da sua casa.
       </h1>
       <p className="mx-auto mt-5 max-w-2xl text-lg leading-relaxed text-texto-suave">
-        No Ateliê ++ criamos peças exclusivas e ajustamos roupas do seu jeito.
-        Escolha uma peça pronta na vitrine ou encomende a sua — com atendimento
-        próximo, por WhatsApp, em {SITE.cidade}.
+        Cada terreiro tem seu axé, e cada axé pede seu modelo, sua cor, seu corte.
+        Aqui a gente não vende tamanho de prateleira — confecciona a sua peça
+        conforme a sua casa firma. Da roupa branca da corrente ao paramento do seu
+        guia.
       </p>
       <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
-        <Link to="/vitrine" className={btnPrimario}>
-          Ver a vitrine
-        </Link>
-        <Link to="/encomenda" className={btnSecundario}>
-          Fazer uma encomenda
+        <AcaoWhats className={btnPrimario}>
+          Me conta o fundamento da sua casa
+        </AcaoWhats>
+        <Link to="/vitrine" className={btnSecundario}>
+          Ver os trabalhos
         </Link>
       </div>
       <p className="mt-4 text-sm text-texto-suave">
-        Feito à mão · Atendimento por WhatsApp · {SITE.cidade}
+        Conforme o fundamento da sua casa · Sob medida · De Campo Grande para todo o Brasil
       </p>
     </section>
   );
 }
 
-/* 2. Peças em destaque — curadoria do admin, com fallback às mais recentes */
+/* 2. Trabalhos em destaque — curadoria do admin, com fallback aos mais recentes */
 function PecasDestaque() {
   const destaqueQ = usePecas({ destaque: true, ordering: "-criado_em" });
   const recentesQ = usePecas({ ordering: "-criado_em" });
@@ -69,11 +98,11 @@ function PecasDestaque() {
     <section>
       <div className="mb-6 text-center">
         <h2 className="font-display text-3xl font-semibold text-texto">
-          Peças em destaque
+          Alguns trabalhos
         </h2>
         <p className="mx-auto mt-2 max-w-2xl text-texto-suave">
-          Uma seleção das nossas peças favoritas do momento. Encontrou algo que
-          gostou? É só falar com a gente.
+          Uma amostra do que sai do ateliê. Não achou o seu? É porque o seu é sob
+          medida — me diz o guia e o fundamento da casa.
         </p>
       </div>
 
@@ -94,48 +123,54 @@ function PecasDestaque() {
         </div>
       ) : (
         <p className="text-center text-texto-suave">
-          Em breve, novas peças por aqui.
+          Em breve, novos trabalhos por aqui.
         </p>
       )}
 
       <div className="mt-8 text-center">
         <Link to="/vitrine" className={btnPrimario}>
-          Ver vitrine completa
+          Ver todos os trabalhos
         </Link>
       </div>
     </section>
   );
 }
 
-/* 3. Sobre o ateliê */
+/* 3. Sobre / manifesto */
 function Sobre() {
   return (
     <section className="overflow-hidden rounded-lg border border-borda bg-superficie">
       <div className="grid gap-0 md:grid-cols-2">
         <img
           src="/apresentacao-atelie.jpg"
-          alt="Logo do Ateliê ++ impresso, com linhas e tesoura — ateliê de costura em Campo Grande"
+          alt="Marca do Ateliê da Sete — estrela de sete pontas e agulha"
           loading="lazy"
           className="aspect-[4/3] w-full object-cover md:aspect-auto md:h-full"
         />
         <div className="flex flex-col justify-center gap-4 p-6 sm:p-8">
           <h2 className="font-display text-3xl font-semibold text-texto">
-            Sobre o Ateliê ++
+            Tem nome de fundamento. Costura como fundamento.
           </h2>
           <p className="leading-relaxed text-texto-suave">
-            O Ateliê ++ nasceu do gosto por roupa bem-feita e do cuidado com
-            cada detalhe. Há {SITE.tempoAtuacao} costurando em {SITE.cidade},
-            transformamos tecidos em peças que vestem bem e duram — sejam
-            modelos prontos ou criações sob medida.
+            São sete as linhas que sustentam a Umbanda — e é com esse respeito que
+            a <strong className="font-medium text-texto">{SITE.dona}</strong> corta
+            cada peça. Aqui não se pergunta só o seu tamanho. Pergunta-se a sua
+            casa: a cor que o seu dirigente firma, o modelo que a sua corrente usa,
+            o paramento que o seu guia pede na gira.
           </p>
           <p className="leading-relaxed text-texto-suave">
-            Trabalhamos perto de você: conversamos sobre a ideia, ajustamos as
-            medidas e acompanhamos a produção do começo ao fim. Cada encomenda é
-            única, feita à mão e pensada para o seu corpo e o seu estilo.
+            Porque a bata do Preto-Velho não é a roupa do Boiadeiro. Porque saia de
+            Oxum não é a de Iansã. Porque o branco que protege na corrente não pode
+            ficar transparente depois de três horas de trabalho. Esses detalhes não
+            se aprendem no manequim — se aprendem na fé.
           </p>
-          <p className="text-sm text-texto-suave">
-            {SITE.numeroPecas} peças entregues · clientes em Campo Grande e
-            região
+          <p className="leading-relaxed text-texto-suave">
+            De Campo Grande para todo o Brasil, vestindo médium, filho de santo e
+            terreiro com a roupa certa para o trabalho certo. Umbanda e Candomblé,
+            no fundamento de cada casa.
+          </p>
+          <p className="font-display text-lg italic text-acento-escuro">
+            Saravá as Sete Linhas. Axé. 🤍
           </p>
         </div>
       </div>
@@ -143,83 +178,129 @@ function Sobre() {
   );
 }
 
-/* 4. O que oferecemos */
-function Oferecemos() {
-  return (
-    <section>
-      <h2 className="mb-6 text-center font-display text-3xl font-semibold text-texto">
-        O que oferecemos
-      </h2>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="flex flex-col gap-3 rounded-lg border border-borda bg-superficie p-6">
-          <h3 className="font-display text-xl font-semibold text-texto">
-            Peças prontas
-          </h3>
-          <p className="flex-1 text-texto-suave">
-            Modelos disponíveis para compra imediata, com tamanho e cor à
-            escolha. Veja na vitrine e finalize pelo WhatsApp.
-          </p>
-          <Link to="/vitrine" className={btnPrimario + " self-start"}>
-            Ver a vitrine
-          </Link>
-        </div>
-        <div className="flex flex-col gap-3 rounded-lg border border-borda bg-superficie p-6">
-          <h3 className="font-display text-xl font-semibold text-texto">
-            Sob medida
-          </h3>
-          <p className="flex-1 text-texto-suave">
-            Tem uma ideia na cabeça? A gente cria para você. Envie referências e
-            medidas e fazemos um orçamento sem compromisso.
-          </p>
-          <Link to="/encomenda" className={btnSecundario + " self-start"}>
-            Fazer uma encomenda
-          </Link>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* 5. Como funciona */
-const PASSOS = [
+/* 4. O que costuramos — catálogo com vocabulário */
+const COSTURAMOS = [
   {
-    titulo: "Escolha ou descreva",
-    texto: "Pegue uma peça na vitrine ou conte o que você imagina.",
+    titulo: "Roupa branca de trabalho",
+    texto:
+      "Para a corrente: balandrau, bata, calça e saia em branco que reflete e não entrega no suor da gira.",
   },
   {
-    titulo: "Fale com o ateliê",
-    texto: "Envie pelo WhatsApp ou preencha a encomenda com fotos e medidas.",
+    titulo: "Pretos-Velhos",
+    texto:
+      "Bata, saia rodada das Vós, lenço e toalha. A humildade da linha de Yorimá no capricho que ela merece.",
   },
   {
-    titulo: "Combinamos tudo",
-    texto: "Alinhamos detalhes, valor e prazo com você.",
+    titulo: "Boiadeiros",
+    texto:
+      "Couro, gibão, chapéu e lenço. A lida e a força para o seu guia chegar firme.",
   },
   {
-    titulo: "Produção e entrega",
-    texto: "Costuramos com carinho e combinamos a entrega.",
+    titulo: "Baianos",
+    texto:
+      "Roupa rodada, bata e chapéu de palha. O gingado do Nordeste na sua gira.",
+  },
+  {
+    titulo: "Ciganos",
+    texto:
+      "Saia rodada, cor, brilho e moeda. Aqui o fundamento é a cor, não o branco.",
+  },
+  {
+    titulo: "Exus & Pombagiras",
+    texto:
+      "Capa, cartola, renda e brilho no preto e vermelho da linha. Presença que se vê chegar.",
+  },
+  {
+    titulo: "Crianças",
+    texto: "Roupinha, laço e alegria para a linha de Yori.",
+  },
+  {
+    titulo: "Candomblé — axós e paramentos",
+    texto:
+      "Axó, bata, saia e anágua, ojá e pano da costa, no fundamento do seu Orixá e da sua casa.",
+  },
+  {
+    titulo: "Paramentos & acessórios",
+    texto:
+      "Torço, ojá, pano da costa, guias/fios de contas e o detalhe que firma a peça.",
   },
 ];
 
-function ComoFunciona() {
+function OQueCosturamos() {
   return (
     <section>
       <h2 className="mb-6 text-center font-display text-3xl font-semibold text-texto">
-        Como funciona
+        Cada guia tem sua roupa. A gente conhece todas.
       </h2>
-      <ol className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {PASSOS.map((passo, i) => (
-          <li
-            key={passo.titulo}
-            className="rounded-lg border border-borda bg-superficie p-5"
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {COSTURAMOS.map((item) => (
+          <div
+            key={item.titulo}
+            className="flex flex-col gap-2 rounded-lg border border-borda bg-superficie p-6"
           >
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-acento-escuro font-display text-lg font-semibold text-white">
-              {i + 1}
-            </span>
-            <h3 className="mt-3 font-medium text-texto">{passo.titulo}</h3>
-            <p className="mt-1 text-sm text-texto-suave">{passo.texto}</p>
-          </li>
+            <h3 className="font-display text-xl font-semibold text-texto">
+              {item.titulo}
+            </h3>
+            <p className="text-texto-suave">{item.texto}</p>
+          </div>
         ))}
-      </ol>
+      </div>
+      <div className="mt-8 flex flex-col items-center gap-3 text-center">
+        <p className="max-w-2xl text-texto-suave">
+          Não achou o seu? É porque a sua é sob medida. Me diz o guia e o
+          fundamento da casa.
+        </p>
+        <AcaoWhats className={btnPrimario}>Chamar no WhatsApp</AcaoWhats>
+      </div>
+    </section>
+  );
+}
+
+/* 5. Diferenciais */
+const DIFERENCIAIS = [
+  {
+    titulo: "Confeccionado conforme a sua casa.",
+    texto:
+      "Você diz a cor que o dirigente firma e o modelo da sua corrente; eu confecciono no fundamento — não no meu palpite.",
+  },
+  {
+    titulo: "A medida é sua.",
+    texto:
+      "Roupa de trabalho apertada atrapalha a gira. Corto no seu corpo, para você trabalhar sem incômodo.",
+  },
+  {
+    titulo: "Branco que não te entrega.",
+    texto:
+      "Tecido e forro pensados para horas de pé, suando, sem transparência.",
+  },
+  {
+    titulo: "Costura que aguenta o trabalho.",
+    texto: "Você roda, levanta o braço, dá o passe — e a barra não abre.",
+  },
+  {
+    titulo: "Quem fala a sua língua.",
+    texto:
+      "Não vou te pedir para explicar o que é ojá, pano da costa ou bata. Já é de casa.",
+  },
+];
+
+function Diferenciais() {
+  return (
+    <section>
+      <h2 className="mb-6 text-center font-display text-3xl font-semibold text-texto">
+        O que muda quando quem costura respeita o axé
+      </h2>
+      <div className="grid gap-4 sm:grid-cols-2">
+        {DIFERENCIAIS.map((item) => (
+          <div
+            key={item.titulo}
+            className="rounded-lg border border-borda bg-superficie p-6"
+          >
+            <h3 className="font-medium text-texto">{item.titulo}</h3>
+            <p className="mt-1 text-texto-suave">{item.texto}</p>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }
@@ -229,7 +310,7 @@ function Depoimentos() {
   return (
     <section>
       <h2 className="mb-6 text-center font-display text-3xl font-semibold text-texto">
-        O que dizem nossas clientes
+        Quem já vestiu o trabalho
       </h2>
       <div className="grid gap-4 sm:grid-cols-3">
         {DEPOIMENTOS.map((d, i) => (
@@ -275,33 +356,21 @@ function Faq() {
 
 /* 8. CTA final */
 function CtaFinal() {
-  const texto =
-    "Olá! Vim pelo site do Ateliê ++ e gostaria de falar sobre uma peça.";
   return (
     <section className="rounded-lg border border-borda bg-superficie px-6 py-10 text-center">
       <h2 className="font-display text-3xl font-semibold text-texto">
-        Vamos criar a sua próxima peça?
+        Saravá! Bora acertar sua roupa?
       </h2>
       <p className="mx-auto mt-2 max-w-xl text-texto-suave">
-        Conte sua ideia ou escolha um modelo pronto. Estamos a uma mensagem de
-        distância.
+        Me conta o guia e o fundamento da sua casa. A peça certa para o trabalho
+        certo.
       </p>
       <div className="mt-6">
-        {whatsappConfigurado ? (
-          <a
-            href={linkWhatsappTexto(texto)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={btnPrimario}
-          >
-            Falar no WhatsApp
-          </a>
-        ) : (
-          <Link to="/encomenda" className={btnPrimario}>
-            Fazer uma encomenda
-          </Link>
-        )}
+        <AcaoWhats className={btnPrimario}>Falar no WhatsApp</AcaoWhats>
       </div>
+      <p className="mt-6 text-sm text-texto-suave">
+        Conforme o fundamento da sua casa · Sob medida · de Campo Grande para o Brasil
+      </p>
     </section>
   );
 }

@@ -28,10 +28,10 @@ export default function DetalhePeca() {
   useSeo(
     peca
       ? {
-          title: `${peca.nome} | Ateliê ++`,
+          title: `${peca.nome} | Ateliê da Sete`,
           description:
             (peca.descricao || "").slice(0, 155) ||
-            `${peca.nome} — peça do Ateliê ++ em Campo Grande-MS.`,
+            `${peca.nome} — Ateliê da Sete, roupas e paramentos de terreiro sob medida em Campo Grande/MS.`,
         }
       : {}
   );

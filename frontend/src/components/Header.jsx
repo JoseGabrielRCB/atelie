@@ -24,13 +24,13 @@ export default function Header() {
       <div className="mx-auto flex max-w-[1200px] items-center justify-between px-4 py-4">
         <Link
           to="/"
-          aria-label="Atelie ++ — ir para a página inicial"
+          aria-label="Ateliê da Sete — ir para a página inicial"
           className="inline-flex items-center rounded-lg p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-escuro focus-visible:ring-offset-2 focus-visible:ring-offset-fundo"
         >
           {/* Logo provido pelo dono em frontend/public/logo-atelie.png (idealmente PNG transparente). */}
           <img
             src="/logo-atelie.png"
-            alt="Atelie ++"
+            alt="Ateliê da Sete — roupas e artigos religiosos"
             className="h-11 w-auto sm:h-12"
           />
         </Link>

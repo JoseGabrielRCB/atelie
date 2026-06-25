@@ -312,25 +312,36 @@ Mesma identidade, porém **mais utilitário**: foco em tabelas e formulários cl
   longo truncado) calculado dos dados já carregados — **sem trocar de aba**; o modal pode ter, no
   rodapé, um link secundário "Abrir a página completa". 2 colunas no mobile.
 
-## Marca (definida — 20/06/2026)
-- **Nome de exibição:** **Atelie ++** (grafia **sem acento**, igual ao logo — padroniza a marca e
-  evita o glitch do circunflexo "ê" na fonte Cormorant Garamond). Vale para todo texto visível
-  (hero da home, `<title>`, login do admin, `alt`/`aria-label`).
-- **Assinatura/tagline:** *Costura sob medida*
-- **Logo:** `frontend/public/logo-atelie.png` — usado no topo do site (header) e como favicon (aba do navegador, substitui o ícone padrão do Vite).
-- **Imagem de apresentação:** `frontend/public/apresentacao-atelie.jpg` — bloco de apresentação do ateliê na home.
-- Obs.: o ideal é o logo em PNG com **fundo transparente** para casar com o fundo claro; se vier com fundo branco, aparece uma caixa branca no header.
+## Marca (atualizada — 25/06/2026: Ateliê da Sete)
+> **Mudou só a MARCA e as COPYS — o design (paleta terracota, Cormorant/Inter, formatos) permanece igual.**
+- **Nome de exibição:** **Ateliê da Sete** (com acento; "Sete" pode aparecer em dourado, como no logo).
+- **Assinatura/tagline:** *Roupas & Artigos Religiosos* · Campo Grande/MS, para todo o Brasil.
+- **Contexto:** ateliê de roupas e paramentos de **Umbanda e Candomblé**, sob medida. Dona: **Gabrielly Liberato**.
+  Voz **firme, com axé**. Regra de ouro da copy: **nunca afirmar cor de Orixá como dogma** → "conforme o
+  fundamento da sua casa". **Nunca** usar "fantasia/figurino/macumba", nem tratar Exu como "diabo". Copys em `COPYS_HOME.md`.
+- **Logo:** `frontend/public/logo-atelie.png` — lockup horizontal (emblema da estrela de 7 pontas + "Ateliê da Sete"),
+  fundo transparente, no header do cliente e do admin.
+- **Favicon:** `frontend/public/favicon.png` (+ `apple-touch-icon.png`) — o **emblema** (estrela + agulha) em fundo azul-marinho.
+- **Imagem de apresentação:** `frontend/public/apresentacao-atelie.jpg` — a marca (versão escura) no bloco da home.
+- Obs.: o logo é **azul-marinho + dourado** e o site segue **terracota** (decisão do dono: manter o design). Convivem; revisitar a paleta só se o dono pedir.
 
 ## Home (landing em `/`)
-- Página de apresentação com **8 seções** (Hero, Peças em destaque, Sobre, O que oferecemos, Como
-  funciona, Depoimentos, FAQ, CTA final), mesma identidade (terracota, Cormorant/Inter, cantos 8px,
-  cartões em `superficie` com borda). Uma única `<h1>` (Hero); cada seção usa `<h2>`.
-- CTAs primários em `acento-escuro` (Ver a vitrine / Falar no WhatsApp); secundários com borda.
-- Catálogo fica em `/vitrine`. Textos e dados (cidade, WhatsApp, FAQ, depoimentos) vêm de
-  `frontend/src/config/site.js` (placeholders do dono num lugar só).
-- SEO: rotas públicas pré-renderizadas (SSG), com `<head>`/JSON-LD por rota; `/admin` fora do índice.
+- Página de apresentação com **8 seções** (Hero, **Alguns trabalhos**, **Sobre/manifesto**,
+  **O que costuramos**, **Diferenciais**, Depoimentos, FAQ, CTA final), mesma identidade (terracota,
+  Cormorant/Inter, cantos 8px, cartões em `superficie` com borda). Uma única `<h1>` (Hero); cada
+  seção usa `<h2>`. As copys (Umbanda + Candomblé) saem de `COPYS_HOME.md`.
+- CTAs primários em `acento-escuro` (Me conta o fundamento da sua casa / Falar no WhatsApp);
+  secundários com borda (Ver os trabalhos). O WhatsApp usa o número de `site.js`/env.
+- Catálogo (os trabalhos) fica em `/vitrine`. Textos e dados (cidade, WhatsApp, FAQ, depoimentos) vêm
+  de `frontend/src/config/site.js` (placeholders do dono num lugar só: WhatsApp, Instagram, depoimentos).
+- SEO: rotas públicas pré-renderizadas (SSG), com `<head>`/JSON-LD (ClothingStore + FAQPage) por rota;
+  `/admin` fora do índice.
 
 ## Histórico
+- 25/06/2026 — **Rebrand para "Ateliê da Sete" (Roupas & Artigos Religiosos, Umbanda + Candomblé)**:
+  trocados nome/tagline/contexto e todas as copys da Home (Hero, Alguns trabalhos, manifesto, O que
+  costuramos, Diferenciais, Depoimentos, FAQ, CTA) conforme `COPYS_HOME.md`; SEO/JSON-LD atualizados.
+  **Só copy/marca — o design (paleta, fontes, componentes, layout) permanece idêntico.**
 - 19/06/2026 — Criação do guia (acento terracota + Cormorant/Inter).
 - 19/06/2026 — Revisão de contraste e regras de destaque/hover/carrinho; fim do glitch de filtros. Unificado `ESTILO.md` + `STYLE.md` neste arquivo.
 - 20/06/2026 — Diretrizes do painel do admin (utilitário, mesma identidade; selos, layout próprio, acessibilidade).
@@ -350,6 +361,8 @@ Mesma identidade, porém **mais utilitário**: foco em tabelas e formulários cl
 - 25/06/2026 — **Paginação (10/página) em todas as tabelas do admin** via `usePaginacao` +
   `Paginacao` (cliente fatia a lista já filtrada/ordenada; volta à página 1 ao mudar filtro;
   "selecionar todos" = página atual). Registrada a regra "toda tabela do admin pagina em 10".
+  Depois estendida aos **detalhes do Resumo** (listas dos modais de métrica, 10/página) e à
+  **vitrine pública** (paginação **server-side**, 20/página, mesmo componente `Paginacao`).
 - 25/06/2026 — **Resumo (Dashboard)** reorganizado: "Pergunte ao painel" no topo (destaque); cartões
   de métrica com ícone lucide e **detalhe em modal** (sem trocar de aba); gráficos com **rótulos de
   valor** (LabelList / total no centro da rosca) e **altura responsiva** no mobile. Registrado o

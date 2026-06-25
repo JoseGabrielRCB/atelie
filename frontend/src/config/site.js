@@ -1,75 +1,75 @@
 // Configuração central do site — placeholders do dono num lugar só.
 // Troque os valores entre [COLCHETES] quando tiver a informação confirmada.
 // As seções da Home leem daqui, então o dono edita só este arquivo.
+//
+// Marca: Ateliê da Sete · Roupas & Artigos Religiosos (Umbanda + Candomblé),
+// sob medida, conforme o fundamento de cada casa. Campo Grande/MS, para todo o
+// Brasil. Dona: Gabrielly Liberato.
 
 export const SITE = {
-  nome: "Ateliê ++",
-  tagline: "Costura sob medida",
+  nome: "Ateliê da Sete",
+  tagline: "Roupas & Artigos Religiosos",
   cidade: "Campo Grande – MS",
+  dona: "Gabrielly Liberato",
 
   // WhatsApp: usa VITE_WHATSAPP do .env quando existir (só dígitos, formato internacional).
   whatsapp: import.meta.env.VITE_WHATSAPP ?? "",
 
   // Pendências do dono (mantidas como [COLCHETE] até confirmar):
-  instagram: "[@PERFIL]", // ex.: "@atelieplus"
-  tempoAtuacao: "[TEMPO — ex.: alguns anos]",
-  prazoEncomenda: "[PRAZO — ex.: de X a Y dias]",
-  numeroPecas: "[Nº]", // ex.: "500" (selo de confiança, opcional)
-  fazAjustes: true, // true: mostra "fazemos ajustes/consertos"; false: oculta
+  instagram: "[@PERFIL]", // handle real (o material cita +106 mil seguidores — confirmar)
+  prazoEncomenda: "15 a 30 dias", // FAQ: prazo médio de confecção
 
   // Domínio público do site (canonical/OG/sitemap) — preencher no deploy.
-  dominio: "[DOMINIO]", // ex.: "https://atelieplus.com.br"
+  dominio: "[DOMINIO]", // ex.: "https://ateliedasete.com.br"
 };
 
 // Depoimentos — PLACEHOLDERS até ter reais (com permissão da pessoa) antes de publicar.
 export const DEPOIMENTOS = [
   {
     texto:
-      "Amei o vestido sob medida, ficou perfeito no corpo. Atendimento atencioso do começo ao fim.",
-    autor: "[Nome da cliente], Campo Grande",
+      "Minha roupa de corrente ficou perfeita — branca de verdade, não entrega no suor. E no fundamento da minha casa.",
+    autor: "[Nome], [cidade]",
   },
   {
-    texto: "Peça impecável e entregue no prazo. Virei cliente!",
-    autor: "[Nome da cliente]",
+    texto: "Encomendei o paramento do meu guia e chegou impecável, no prazo.",
+    autor: "[Nome]",
   },
   {
-    texto: "Capricho em cada detalhe. Recomendo demais.",
-    autor: "[Nome da cliente]",
+    texto: "Atendimento que entende do assunto. Virei cliente.",
+    autor: "[Nome]",
   },
 ];
 
 // FAQ — fonte única (alimenta a seção visível e o JSON-LD FAQPage da Home).
+// Regras: sempre "conforme o fundamento da sua casa"; atende Umbanda E Candomblé.
 export const FAQ = [
   {
-    pergunta: "O Ateliê ++ faz roupas sob medida?",
+    pergunta: "Vocês fazem conforme o fundamento da minha casa?",
     resposta:
-      "Sim. Criamos peças sob medida a partir das suas referências e medidas, além de vendermos modelos prontos.",
+      "Sempre. É a base do trabalho: a cor, o modelo e o detalhe seguem o que o seu dirigente firma — não um padrão de prateleira.",
   },
   {
-    pergunta: "Vocês atendem em Campo Grande – MS?",
+    pergunta: "Atendem Umbanda e Candomblé?",
     resposta:
-      "Sim. Atendemos em Campo Grande – MS e também recebemos encomendas [à distância / por envio — confirmar].",
+      "Sim, os dois. Roupa branca de corrente e paramentos de guias (Umbanda) e axós/paramentos no fundamento do Orixá (Candomblé).",
   },
   {
-    pergunta: "Como faço um pedido?",
+    pergunta: "Como funciona a medida à distância?",
     resposta:
-      "Escolha uma peça na vitrine e finalize pelo WhatsApp, ou preencha o formulário de encomenda com fotos e detalhes.",
+      "A gente combina pelo WhatsApp: passo a tabela de medidas, você confere, e enviamos para todo o Brasil.",
   },
   {
-    pergunta: "Quanto tempo leva uma encomenda sob medida?",
-    resposta: `O prazo varia conforme a peça. Em geral, ${SITE.prazoEncomenda} — combinamos o prazo exato com você antes de começar.`,
+    pergunta: "Fazem paramento de Exu e Pombagira?",
+    resposta:
+      "Sim — capas, cartola, renda e o brilho da linha, no preto e vermelho.",
   },
   {
-    pergunta: "Como funciona o pagamento?",
-    resposta:
-      "Combinamos o valor e a forma de pagamento direto pelo WhatsApp, de forma simples e transparente.",
+    pergunta: "Qual o prazo de confecção?",
+    resposta: `Em média ${SITE.prazoEncomenda}, conforme a peça e a fila — combinamos o prazo exato antes de começar.`,
   },
-  ...(SITE.fazAjustes
-    ? [
-        {
-          pergunta: "Vocês fazem ajustes e consertos?",
-          resposta: "Sim, fazemos ajustes e pequenos consertos.",
-        },
-      ]
-    : []),
+  {
+    pergunta: "A roupa branca fica transparente?",
+    resposta:
+      "Não. Tecido e forro próprios para o trabalho, pensados para horas de gira sem transparência.",
+  },
 ];

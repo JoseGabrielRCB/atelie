@@ -5,7 +5,7 @@ import { useSeo } from "../../seo/useSeo";
 // Retorno do Mercado Pago quando o pagamento ainda está em processamento
 // (ex.: Pix aguardando compensação). NÃO esvazia o carrinho.
 export default function Pendente() {
-  useSeo({ title: "Pagamento em processamento | Atelie ++" });
+  useSeo({ title: "Pagamento em processamento | Ateliê da Sete" });
   const [params] = useSearchParams();
   const pedidoId = params.get("external_reference");
 

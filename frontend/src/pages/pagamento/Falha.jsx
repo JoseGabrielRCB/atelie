@@ -5,7 +5,7 @@ import { useSeo } from "../../seo/useSeo";
 // Retorno do Mercado Pago quando o pagamento falhou ou foi cancelado.
 // NÃO esvazia o carrinho — o cliente pode tentar de novo.
 export default function Falha() {
-  useSeo({ title: "Pagamento não concluído | Atelie ++" });
+  useSeo({ title: "Pagamento não concluído | Ateliê da Sete" });
 
   return (
     <section className="mx-auto max-w-xl py-10 text-center">

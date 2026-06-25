@@ -7,7 +7,7 @@ import { useSeo } from "../../seo/useSeo";
 // Página de retorno do Mercado Pago após pagamento aprovado (auto_return).
 // A confirmação REAL é feita por webhook no backend; aqui é só a UX amigável.
 export default function Sucesso() {
-  useSeo({ title: "Pagamento aprovado | Atelie ++" });
+  useSeo({ title: "Pagamento aprovado | Ateliê da Sete" });
   const [params] = useSearchParams();
   const { limpar } = useCarrinho();
   const pedidoId = params.get("external_reference");

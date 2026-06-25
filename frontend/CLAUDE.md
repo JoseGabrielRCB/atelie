@@ -109,8 +109,8 @@ frontend/
 
 | Rota          | Componente     | Descrição |
 |---------------|----------------|-----------|
-| `/`           | `Home`         | **Landing/SEO** (única `<h1>`). 8 seções (copys de `COPYS_HOME.md`): Hero + 2 CTAs + microcopy; **Peças em destaque** (`?destaque=true`, fallback às recentes, reusa `PecaCard`); Sobre (foto `apresentacao-atelie.jpg`, `loading="lazy"`); O que oferecemos; Como funciona (4 passos); Depoimentos; FAQ; CTA final. Textos lidos de `config/site.js`. Pré-renderizada (SSG) com JSON-LD LocalBusiness + FAQPage. |
-| `/vitrine`    | `Vitrine`      | Catálogo (`<h1>` "Vitrine"). Grade responsiva (2 cols mobile → 4 desktop). Busca por nome (**máx. 60**, debounce 350ms → `?search=`), filtro por categoria (`?categoria=`), ordenação `-criado_em`. Selo "Esgotado" quando todas as variações estão esgotadas. Estados: skeleton / erro / vazio. CTA de encomenda no rodapé da página. Pré-renderizada (SSG). |
+| `/`           | `Home`         | **Landing/SEO** (única `<h1>`). 8 seções (copys de `COPYS_HOME.md` — marca **Ateliê da Sete**, Umbanda + Candomblé): Hero + 2 CTAs (WhatsApp "Me conta o fundamento da sua casa" / "Ver os trabalhos") + microcopy; **Alguns trabalhos** (`?destaque=true`, fallback às recentes, reusa `PecaCard`); **Sobre/manifesto** ("Tem nome de fundamento…", foto `apresentacao-atelie.jpg`); **O que costuramos** (catálogo com vocabulário); **Diferenciais**; Depoimentos; FAQ (6); CTA final. Textos lidos de `config/site.js`. Pré-renderizada (SSG) com JSON-LD ClothingStore + FAQPage. |
+| `/vitrine`    | `Vitrine`      | Catálogo (`<h1>` "Vitrine"). Grade responsiva (2 cols mobile → 4 desktop). Busca por nome (**máx. 60**, debounce 350ms → `?search=`), filtro por categoria (`?categoria=`), ordenação `-criado_em`. **Paginação server-side** (`usePecasPaginadas`, 20/página, controles `Paginacao`; volta à página 1 ao mudar busca/categoria). Selo "Esgotado" quando todas as variações estão esgotadas. Estados: skeleton / erro / vazio. CTA de encomenda no rodapé da página. Pré-renderizada (SSG). |
 | `/peca/:id`   | `DetalhePeca`  | Galeria (`Galeria` — carretel: imagem grande + setas anterior/próxima circulando da principal à última + miniaturas clicáveis com contador "i/total"), nome, preço, descrição. `SeletorVariacao` (esgotadas desabilitadas; **se só houver 1 variação disponível, vem pré-selecionada**), quantidade (**travada até escolher tamanho/cor** quando há várias), **subtotal dinâmico (preço × quantidade)**, "Adicionar ao pedido" com feedback. Peça `sob_medida` sem variações: adiciona sem variação. |
 | `/carrinho`   | `Carrinho`     | Lista de itens (ajustar/remover, **subtotal por linha**), **total dinâmico**. Finalizar **exige conta**: deslogado → CTA "Entrar"/"Criar conta" (`?next=/carrinho`); logado → resumo "Comprando como **nome** · CPF …" + **"Finalizar compra"** que chama `criarCheckout({itens})` (nome/contato/CPF vêm da conta) → redireciona ao **Mercado Pago** (`init_point`). Itens **sob medida** ficam de fora (aviso → Encomenda). Não limpa o carrinho aqui. Vazio: CTA para a vitrine. |
 | `/conta/login` `/conta/cadastro` | `conta/Login` · `conta/Cadastro` | **Páginas públicas** (não modal). Cadastro: nome, e-mail, **CPF (máscara+validação)**, telefone (máscara), senha+confirmar — validação completa (todos os erros de uma vez) e auto-login no sucesso. Login por e-mail+senha. Ambos respeitam `?next=`. |
@@ -321,14 +321,32 @@ pré-renderizadas, ex. `/peca/:id` e `/admin/*`, sobem por CSR). Preencher `SITE
   página 1 ao mudar filtro; a página é clampada quando a lista encolhe). Igual em tabela (desktop) e
   cartões (mobile) — muda só a fatia. "Selecionar todos" usa os ids da **página atual**; a exclusão em
   massa age sobre tudo que estiver selecionado. O **backend já pagina** (`PageNumberPagination`,
-  `count/next/previous/results`, `PAGE_SIZE=20`); a vitrine pública não muda. *Melhoria futura:* se o
-  volume chegar a milhares, migrar para paginação server-side (`?page=` sob demanda).
+  `count/next/previous/results`, `PAGE_SIZE=20`). *Melhoria futura (admin):* se o volume chegar a
+  milhares, migrar o admin para server-side (`?page=` sob demanda). A mesma `Paginacao` também é usada
+  nos **detalhes do Resumo** (listas dos modais de métrica do Dashboard, 10/página, cliente) e na
+  **vitrine pública**, esta já **server-side**: `usePecasPaginadas` passa `page` ao backend e usa o
+  `count` para os controles (20/página); volta à página 1 ao mudar busca/categoria.
 - **Ícones**: sempre componentes do `lucide-react` (ex.: `Plus`, `Minus`, `Pencil`, `Trash2`,
   `Eye`, `X`, `Check`), nunca imagem/SVG inline. Ícones decorativos com `aria-hidden`; quando a
   ação é só ícone, usar `aria-label`.
 
 ## Histórico de mudanças
 
+- **2026-06-25** — **Rebrand para "Ateliê da Sete"** (Roupas & Artigos Religiosos — Umbanda +
+  Candomblé, Campo Grande/MS, dona Gabrielly Liberato). Trocados **só copy/marca/contexto** (design
+  intacto): nome/tagline em `config/site.js` (+ FAQ de 6 itens e depoimentos placeholder das copys),
+  todas as seções da **Home** reescritas conforme `COPYS_HOME.md` (Hero, Alguns trabalhos, manifesto,
+  O que costuramos, Diferenciais, Depoimentos, FAQ, CTA — CTAs de WhatsApp com a microcopy nova),
+  SEO/`meta.js` (titles/descriptions por rota) e JSON-LD (ClothingStore + FAQPage), `index.html`
+  `<title>`, footer (NAP + "Feito com axé… Saravá as Sete Linhas"), e os textos de marca em Header,
+  AdminLayout, Login, retornos de pagamento, DetalhePeca e Apresentacao. Regras de copy respeitadas
+  ("conforme o fundamento da sua casa"; sem termos proibidos). `npm run build` (SSG) ok.
+- **2026-06-25** — **Paginação estendida aos detalhes do Resumo e à vitrine pública.** Os modais de
+  detalhe das métricas do Dashboard agora paginam (10/página, `DetalheLista` reusando `usePaginacao`
+  + `Paginacao`). A **vitrine** (`/vitrine`) ganhou paginação **server-side** (novo hook
+  `usePecasPaginadas` que devolve `{itens,total}`; passa `page` ao backend; controles `Paginacao`,
+  20/página; volta à página 1 ao mudar busca/categoria) — antes mostrava só os 20 primeiros. `usePecas`
+  (array) segue intacto para a Home. `npm run build` (SSG) ok.
 - **2026-06-25** — **Paginação na UI (10/página) em TODAS as tabelas do admin** (Peças, Estoque,
   Categorias [2 tabelas], Cores, Destaques, Encomendas, Vendas, Funcionários). Novos `hooks/
   usePaginacao.js` + `components/admin/Paginacao.jsx` (reutilizáveis; desktop + cartões mobile),

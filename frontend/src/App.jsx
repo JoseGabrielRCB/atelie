@@ -18,13 +18,13 @@ export default function App() {
               {SITE.nome}
             </p>
             <p className="mt-1">{SITE.tagline}</p>
-            <p className="mt-1">Atendimento: {SITE.cidade} e por encomenda</p>
+            <p className="mt-1">Atendimento: {SITE.cidade} e para todo o Brasil</p>
           </div>
           <div>
             <p className="font-medium text-texto">Contato</p>
             {whatsappConfigurado ? (
               <a
-                href={linkWhatsappTexto("Olá! Vim pelo site do Ateliê ++.")}
+                href={linkWhatsappTexto("Saravá! Vim pelo site do Ateliê da Sete.")}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-1 block transition hover:text-acento-escuro"
@@ -50,7 +50,7 @@ export default function App() {
           </nav>
         </div>
         <p className="px-4 pb-8 text-center text-xs text-texto-suave">
-          © {new Date().getFullYear()} {SITE.nome} · {SITE.cidade}
+          © {new Date().getFullYear()} {SITE.nome} · Feito com axé em Campo Grande/MS · Saravá as Sete Linhas
         </p>
       </footer>
     </div>
