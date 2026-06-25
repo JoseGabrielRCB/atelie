@@ -1,8 +1,11 @@
 """Modelos do catálogo do ateliê: Categoria, Cor, Peca, Variacao, Imagem, Encomenda."""
 
+from decimal import Decimal
+
 from django.conf import settings
 from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models
+from django.utils import timezone
 from django.utils.text import slugify
 
 from .validators import validar_cpf
@@ -379,6 +382,16 @@ class Pedido(models.Model):
         default=Status.AGUARDANDO_PAGAMENTO,
     )
     total = models.DecimalField("total", max_digits=10, decimal_places=2)
+    # Cupom aplicado (se houve) + desconto total já embutido em `total`.
+    cupom = models.ForeignKey(
+        "Promocao",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="pedidos",
+        verbose_name="cupom",
+    )
+    desconto = models.DecimalField("desconto", max_digits=10, decimal_places=2, default=Decimal("0.00"))
     mp_preference_id = models.CharField("ID da preferência (MP)", max_length=100, blank=True)
     mp_payment_id = models.CharField("ID do pagamento (MP)", max_length=100, blank=True)
     criado_em = models.DateTimeField("criado em", auto_now_add=True)
@@ -390,7 +403,15 @@ class Pedido(models.Model):
         ordering = ["-criado_em"]
 
     def __str__(self):
-        return f"Pedido #{self.pk} - {self.get_status_display()}"
+        return f"{self.codigo} - {self.get_status_display()}"
+
+    @property
+    def codigo(self) -> str:
+        """Código de compra legível e estável (ex.: PED-000042), derivado do id.
+
+        Fácil de ditar por telefone/WhatsApp e único (o id é único). Não precisa
+        de campo/migration — é sempre o mesmo para o mesmo pedido."""
+        return f"PED-{self.pk:06d}" if self.pk else "PED-—"
 
 
 class ItemPedido(models.Model):
@@ -467,3 +488,113 @@ class MensagemWhatsApp(models.Model):
 
     def __str__(self):
         return f"Mensagem {self.mensagem_id}"
+
+
+class Promocao(models.Model):
+    """Promoção/cupom de desconto (gerida no financeiro do admin).
+
+    Dois tipos de aplicação: **cupom** (o cliente digita um código no checkout) e
+    **automática** (aplica sozinha ao preço de exibição das peças no escopo). O
+    desconto é SEMPRE calculado no servidor — nunca se confia no cliente.
+    """
+
+    class TipoAplicacao(models.TextChoices):
+        CUPOM = "cupom", "Cupom"
+        AUTOMATICA = "automatica", "Automática"
+
+    class TipoDesconto(models.TextChoices):
+        PERCENTUAL = "percentual", "Percentual (%)"
+        VALOR = "valor", "Valor (R$)"
+
+    class Escopo(models.TextChoices):
+        TUDO = "tudo", "Tudo"
+        PECA = "peca", "Peça"
+        CATEGORIA = "categoria", "Categoria"
+
+    nome = models.CharField("nome", max_length=80)
+    tipo_aplicacao = models.CharField(
+        "tipo de aplicação", max_length=20, choices=TipoAplicacao.choices
+    )
+    # Único entre cupons (constraint condicional abaixo); vazio para automática.
+    codigo = models.CharField("código", max_length=40, blank=True)
+    tipo_desconto = models.CharField(
+        "tipo de desconto", max_length=20, choices=TipoDesconto.choices
+    )
+    valor = models.DecimalField(
+        "valor",
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"), "O valor do desconto deve ser maior que zero.")],
+    )
+    escopo = models.CharField(
+        "escopo", max_length=20, choices=Escopo.choices, default=Escopo.TUDO
+    )
+    # Escopo por PEÇA(s) ou CATEGORIA(s) — pode escolher mais de uma.
+    pecas = models.ManyToManyField(
+        Peca, blank=True, related_name="promocoes", verbose_name="peças"
+    )
+    categorias = models.ManyToManyField(
+        Categoria, blank=True, related_name="promocoes", verbose_name="categorias"
+    )
+    inicio = models.DateTimeField("início", null=True, blank=True)
+    fim = models.DateTimeField("fim", null=True, blank=True)
+    limite_uso = models.PositiveIntegerField("limite de usos", null=True, blank=True)
+    usos = models.PositiveIntegerField("usos", default=0)
+    acumulavel = models.BooleanField(
+        "acumulável",
+        default=False,
+        help_text="Se o cupom soma com a promoção automática; senão, vale o maior desconto.",
+    )
+    ativo = models.BooleanField("ativo", default=True)
+    criado_em = models.DateTimeField("criado em", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "promoção"
+        verbose_name_plural = "promoções"
+        ordering = ["-criado_em"]
+        constraints = [
+            # Código único apenas entre cupons (automáticas têm código vazio).
+            models.UniqueConstraint(
+                fields=["codigo"],
+                condition=models.Q(tipo_aplicacao="cupom"),
+                name="codigo_unico_por_cupom",
+            ),
+        ]
+
+    def __str__(self):
+        return self.nome
+
+    def vigente(self, agora=None) -> bool:
+        """Ativa, dentro do período (se houver) e sem estourar o limite de usos."""
+        if not self.ativo:
+            return False
+        agora = agora or timezone.now()
+        if self.inicio and agora < self.inicio:
+            return False
+        if self.fim and agora > self.fim:
+            return False
+        if self.limite_uso is not None and self.usos >= self.limite_uso:
+            return False
+        return True
+
+    def casa_peca(self, peca) -> bool:
+        """Se o escopo da promoção abrange a ``peca`` (use prefetch nas M2M)."""
+        if self.escopo == self.Escopo.TUDO:
+            return True
+        if self.escopo == self.Escopo.PECA:
+            return any(p.id == peca.id for p in self.pecas.all())
+        if self.escopo == self.Escopo.CATEGORIA:
+            return any(c.id == peca.categoria_id for c in self.categorias.all())
+        return False
+
+    def desconto_unitario(self, preco) -> Decimal:
+        """Desconto (R$) sobre um preço unitário — nunca abaixo de 0 nem acima do preço."""
+        preco = Decimal(preco)
+        if self.tipo_desconto == self.TipoDesconto.PERCENTUAL:
+            bruto = preco * self.valor / Decimal(100)
+        else:
+            bruto = self.valor
+        bruto = bruto.quantize(Decimal("0.01"))
+        if bruto < 0:
+            return Decimal("0.00")
+        return min(bruto, preco)

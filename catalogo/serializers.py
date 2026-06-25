@@ -19,6 +19,7 @@ from .models import (
     Peca,
     Pedido,
     Perfil,
+    Promocao,
     Variacao,
 )
 from .permissions import perfil_efetivo
@@ -143,6 +144,10 @@ class PecaSerializer(serializers.ModelSerializer):
     variacoes = VariacaoSerializer(many=True, read_only=True)
     imagens = ImagemSerializer(many=True, read_only=True)
     categoria_nome = serializers.CharField(source="categoria.nome", read_only=True)
+    # Preço com promoção AUTOMÁTICA ativa (calculado no servidor). `em_promocao`
+    # indica se há desconto; `preco_promocional` é o preço novo (ou o preço cheio).
+    preco_promocional = serializers.SerializerMethodField()
+    em_promocao = serializers.SerializerMethodField()
     # Nome único, com mensagem PT-BR. O UniqueValidator ignora a própria peça
     # automaticamente em PATCH/PUT (usa a instância do serializer).
     nome = serializers.CharField(
@@ -183,10 +188,32 @@ class PecaSerializer(serializers.ModelSerializer):
             "ativo",
             "destaque",
             "criado_em",
+            "preco_promocional",
+            "em_promocao",
             "variacoes",
             "imagens",
         ]
         read_only_fields = ["criado_em"]
+
+    # Promoções automáticas ativas — buscadas UMA vez por serializer (evita N+1).
+    def _promos_auto(self):
+        if not hasattr(self, "_cache_promos_auto"):
+            from .promocoes import promocoes_automaticas_ativas
+
+            self._cache_promos_auto = promocoes_automaticas_ativas()
+        return self._cache_promos_auto
+
+    def get_preco_promocional(self, obj):
+        from .promocoes import preco_com_promocao
+
+        preco, _ = preco_com_promocao(obj, self._promos_auto())
+        return f"{preco:.2f}"
+
+    def get_em_promocao(self, obj):
+        from .promocoes import preco_com_promocao
+
+        _, em = preco_com_promocao(obj, self._promos_auto())
+        return em
 
 
 # --------------------------------------------------------------------------
@@ -316,14 +343,22 @@ class ItemCheckoutSerializer(serializers.Serializer):
 
 class CheckoutSerializer(serializers.Serializer):
     """Entrada do checkout. Exige conta de cliente: nome/contato/CPF vêm da conta
-    autenticada (não do corpo)."""
+    autenticada (não do corpo). ``cupom`` é opcional (validado no servidor)."""
 
     itens = ItemCheckoutSerializer(many=True)
+    cupom = serializers.CharField(required=False, allow_blank=True)
 
     def validate_itens(self, itens):
         if not itens:
             raise serializers.ValidationError("Adicione pelo menos um item ao pedido.")
         return itens
+
+
+class CupomValidarSerializer(serializers.Serializer):
+    """Entrada de ``POST /api/cupom/validar/`` (pré-validação no carrinho)."""
+
+    codigo = serializers.CharField()
+    itens = ItemCheckoutSerializer(many=True)
 
 
 class ItemPedidoSerializer(serializers.ModelSerializer):
@@ -348,11 +383,14 @@ class PedidoSerializer(serializers.ModelSerializer):
     """Leitura de pedidos (admin): inclui os itens aninhados."""
 
     itens = ItemPedidoSerializer(many=True, read_only=True)
+    # Código legível e estável (ex.: PED-000042) para suporte/cliente.
+    codigo = serializers.ReadOnlyField()
 
     class Meta:
         model = Pedido
         fields = [
             "id",
+            "codigo",
             "nome",
             "contato",
             "status",
@@ -477,6 +515,112 @@ class MudarSenhaSerializer(serializers.Serializer):
         except DjangoValidationError as exc:
             raise serializers.ValidationError(list(exc.messages))
         return value
+
+
+# --------------------------------------------------------------------------
+# Promoções / cupons (gestão no financeiro do admin)
+# --------------------------------------------------------------------------
+
+
+class PromocaoSerializer(serializers.ModelSerializer):
+    """CRUD de promoções/cupons (admin financeiro). ``usos`` é só leitura.
+
+    Escopo por PEÇA(s)/CATEGORIA(s) aceita várias (M2M). Para exibição, expõe
+    listas de nomes (`pecas_nomes`/`categorias_nomes`)."""
+
+    pecas_nomes = serializers.SerializerMethodField()
+    categorias_nomes = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Promocao
+        fields = [
+            "id",
+            "nome",
+            "tipo_aplicacao",
+            "codigo",
+            "tipo_desconto",
+            "valor",
+            "escopo",
+            "pecas",
+            "pecas_nomes",
+            "categorias",
+            "categorias_nomes",
+            "inicio",
+            "fim",
+            "limite_uso",
+            "usos",
+            "acumulavel",
+            "ativo",
+            "criado_em",
+        ]
+        read_only_fields = ["usos", "criado_em"]
+
+    def get_pecas_nomes(self, obj):
+        return [p.nome for p in obj.pecas.all()]
+
+    def get_categorias_nomes(self, obj):
+        return [c.nome for c in obj.categorias.all()]
+
+    def validate(self, attrs):
+        def atual(campo, padrao=None):
+            if campo in attrs:
+                return attrs[campo]
+            return getattr(self.instance, campo, padrao)
+
+        tipo_aplicacao = atual("tipo_aplicacao")
+        tipo_desconto = atual("tipo_desconto")
+        escopo = atual("escopo")
+        codigo = atual("codigo", "")
+        valor = atual("valor")
+        inicio = atual("inicio")
+        fim = atual("fim")
+        # M2M: nos attrs vêm como lista de instâncias; na instância, queryset.
+        pecas = attrs.get("pecas")
+        if pecas is None and self.instance:
+            pecas = list(self.instance.pecas.all())
+        pecas = pecas or []
+        categorias = attrs.get("categorias")
+        if categorias is None and self.instance:
+            categorias = list(self.instance.categorias.all())
+        categorias = categorias or []
+
+        erros = {}
+
+        if tipo_aplicacao == Promocao.TipoAplicacao.CUPOM:
+            cod = (codigo or "").strip().upper()
+            if not cod:
+                erros["codigo"] = "Informe um código para o cupom."
+            else:
+                qs = Promocao.objects.filter(
+                    tipo_aplicacao=Promocao.TipoAplicacao.CUPOM, codigo__iexact=cod
+                )
+                if self.instance:
+                    qs = qs.exclude(pk=self.instance.pk)
+                if qs.exists():
+                    erros["codigo"] = "Já existe um cupom com esse código."
+                attrs["codigo"] = cod
+        else:
+            attrs["codigo"] = ""  # automática não tem código
+
+        if tipo_desconto == Promocao.TipoDesconto.PERCENTUAL and valor is not None and valor > 100:
+            erros["valor"] = "O percentual não pode passar de 100%."
+
+        if escopo == Promocao.Escopo.PECA and not pecas:
+            erros["pecas"] = "Escolha ao menos uma peça."
+        if escopo == Promocao.Escopo.CATEGORIA and not categorias:
+            erros["categorias"] = "Escolha ao menos uma categoria."
+
+        if inicio and fim and fim <= inicio:
+            erros["fim"] = "O fim deve ser depois do início (data e hora)."
+
+        if erros:
+            raise serializers.ValidationError(erros)
+        # Zera as M2M fora do escopo (mantém o dado coerente).
+        if escopo != Promocao.Escopo.PECA:
+            attrs["pecas"] = []
+        if escopo != Promocao.Escopo.CATEGORIA:
+            attrs["categorias"] = []
+        return attrs
 
 
 # --------------------------------------------------------------------------

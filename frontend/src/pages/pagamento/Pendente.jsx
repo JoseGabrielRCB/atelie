@@ -1,5 +1,6 @@
 import { Link, useSearchParams } from "react-router-dom";
 import { Clock } from "lucide-react";
+import { codigoPedido } from "../../lib/pedido";
 import { useSeo } from "../../seo/useSeo";
 
 // Retorno do Mercado Pago quando o pagamento ainda está em processamento
@@ -22,7 +23,8 @@ export default function Pendente() {
       </p>
       {pedidoId && (
         <p className="mt-2 text-sm text-texto-suave">
-          Número do pedido: <span className="font-medium">#{pedidoId}</span>
+          Código da compra:{" "}
+          <span className="font-mono font-medium text-texto">{codigoPedido(pedidoId)}</span>
         </p>
       )}
       <Link

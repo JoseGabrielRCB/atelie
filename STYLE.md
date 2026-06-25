@@ -130,6 +130,10 @@ vírgula decimal).
 - **Botão primário:** fundo `acento-escuro`, texto branco, hover `acento-hover`.
 - **Foco (acessibilidade):** estados de foco visíveis (anel em `acento-escuro`) em botões, links e campos.
 - **Selo "Esgotado":** fundo `esgotado`, texto branco, pequeno, no canto da foto.
+- **Promoção (preço):** quando há promoção **automática**, o card/detalhe mostram o **preço novo** em
+  `acento-escuro` ao lado do **preço antigo riscado** (`line-through`, `texto-suave`) + selo discreto
+  "Promoção" (`acento-escuro`). No carrinho, o campo **Cupom** mostra o desconto/total ao aplicar; o
+  valor final é sempre reconfirmado no servidor.
 - **Seletor de tamanho/cor:** chips; selecionado em `acento-escuro` com texto branco; indisponível apagado (`esgotado`) e riscado.
 
 ## Entradas do cliente (formulários públicos)
@@ -338,6 +342,15 @@ Mesma identidade, porém **mais utilitário**: foco em tabelas e formulários cl
   `/admin` fora do índice.
 
 ## Histórico
+- 25/06/2026 — **Promoções e cupons**: preço **riscado + promocional** + selo "Promoção" na
+  vitrine/detalhe (promoção automática); campo de **cupom** no carrinho (desconto/total ao aplicar,
+  reconfirmado no servidor); seção **Promoções** no admin (grupo Pedidos, só Dono/`acesso_financeiro`)
+  com tabela paginada/ordenável e modal de criar/editar. Descontos sempre calculados no servidor. O
+  form de promoção segue a Padronização: **valor em R$ com máscara BRL (`CampoPreco`)** e em % com
+  sufixo "%"/teto 100; escopo por **peça(s)/categoria(s)** com seletor de **busca + múltipla seleção**
+  (lista com rolagem + "Selecionar todas"/"Limpar"); **prévia** do preço com desconto (rola com +10
+  peças); datas com hora (`datetime-local`, `min` = agora, sem passado, fim ≥ início) e dica
+  legível; **limite de usos até 10 dígitos**.
 - 25/06/2026 — **Rebrand para "Ateliê da Sete" (Roupas & Artigos Religiosos, Umbanda + Candomblé)**:
   trocados nome/tagline/contexto e todas as copys da Home (Hero, Alguns trabalhos, manifesto, O que
   costuramos, Diferenciais, Depoimentos, FAQ, CTA) conforme `COPYS_HOME.md`; SEO/JSON-LD atualizados.

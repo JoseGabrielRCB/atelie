@@ -143,6 +143,18 @@ perde acesso). Registrado no Django Admin.
 `Perfil`. Um token vale só no seu contexto (reforçado por `EhCliente` / pelas permissões de staff).
 Migration `0010`. Registrado no Django Admin. (Sem endereço/entrega neste MVP — "combinar à parte".)
 
+**Promocao** — desconto gerido no FINANCEIRO do admin (migration `0011`, que também adiciona
+`Pedido.cupom` FK + `Pedido.desconto`). Campos: `nome`, `tipo_aplicacao` (`cupom` | `automatica`),
+`codigo` (vazio p/ automática; **único entre cupons** via `UniqueConstraint` condicional),
+`tipo_desconto` (`percentual` | `valor`) + `valor` (Decimal), `escopo` (`tudo` | `peca` | `categoria`)
++ `pecas`/`categorias` (**M2M — pode escolher mais de uma**, migration `0012`), `inicio`/`fim`
+(datetime, opcionais), `limite_uso` (opcional) +
+`usos` (default 0), `acumulavel` (bool), `ativo`, `criado_em`. Métodos: `vigente()`, `casa_peca()`,
+`desconto_unitario(preco)`. **Todo o cálculo de desconto é no servidor** (`catalogo/promocoes.py`):
+automática aplica ao preço de exibição (escopo); cupom valida (vigência + escopo) e aplica %/R$;
+acúmulo = soma (cupom acumulável por cima da automática) ou o MAIOR dos dois; total nunca < 0. Os
+`usos` só incrementam quando o pedido é **pago** (webhook, com lock). Registrado no Django Admin.
+
 ### Papéis e permissões (a fonte da verdade é o backend)
 
 `catalogo/permissions.py` lê `request.user.perfil` e expõe os helpers `perfil_efetivo(user)`
@@ -223,7 +235,8 @@ Base: `/api/`. Respostas de lista são **paginadas** (`PageNumberPagination`, `P
   para detalhe. Escrita (POST/PUT/PATCH/DELETE) exige JWT de admin.
 - `GET /api/pecas/` — lista peças **ativas** com variações e imagens aninhadas.
   Filtros: `?categoria=<id>`, `?tipo=pronta|sob_medida`, `?destaque=true` (peças em destaque),
-  busca `?search=<texto>` (nome/descrição), ordenação `?ordering=preco|-criado_em|nome`.
+  busca `?search=<texto>` (nome/descrição), ordenação `?ordering=preco|-criado_em|nome`. Cada peça
+  expõe `preco_promocional` e `em_promocao` (promoção **automática** ativa, calculada no servidor).
 - `GET /api/pecas/{id}/` — detalhe de uma peça.
 - `POST /api/encomendas/` — **público** (`AllowAny`): cria uma encomenda sob medida via
   `multipart/form-data`. Campos: `nome`*, `contato`*, `descricao`*, `tamanho_medidas`,
@@ -234,14 +247,19 @@ Base: `/api/`. Respostas de lista são **paginadas** (`PageNumberPagination`, `P
   Anti-spam: throttle com escopo `encomendas` (`10/hour`) só nessa ação → `429` se exceder.
 - `POST /api/checkout/` — **exige conta de cliente** (`EhCliente`): cria um `Pedido` de peças
   prontas + a preferência de pagamento no Mercado Pago. Body JSON: `{ "itens": [{ "variacao_id",
-  "quantidade" }, ...] }` — **nome/contato/CPF vêm da conta autenticada** (não do corpo). Grava
-  `pedido.cliente` e `nome`/`contato` (snapshot) a partir do `Cliente`. Valida peça ativa/pronta,
-  quantidade ≥ 1 e disponibilidade; recalcula preço/total no servidor; cria o pedido
-  `aguardando_pagamento` (`expira_em = agora + 30min`) **sem** decrementar estoque. Envia o **payer**
-  ao MP (`name`/`email`/`identification` CPF). Resposta `201`: `{ "pedido_id", "init_point" }`.
-  Erros: `401` (anônimo), `403` (staff), `400 {"itens": [...]}` (variação inexistente / peça
-  sob_medida ou inativa), `409 {"disponibilidade": [...]}`, `502 {"detalhe": [...]}`. Throttle
-  escopo `encomendas` (`10/hour`). `back_urls`: `/pagamento/sucesso|pendente|falha`.
+  "quantidade" }, ...], "cupom"? }` — **nome/contato/CPF vêm da conta autenticada** (não do corpo).
+  Grava `pedido.cliente` e `nome`/`contato` (snapshot) a partir do `Cliente`. Valida peça
+  ativa/pronta, quantidade ≥ 1 e disponibilidade; recalcula preço/total no servidor aplicando
+  promoções automáticas + cupom (motor `catalogo/promocoes.py`); grava `cupom`/`desconto` e `total`
+  já descontado. Cria o pedido `aguardando_pagamento` (`expira_em = agora + 30min`) **sem**
+  decrementar estoque. Quando há desconto, o MP recebe **uma linha** com o total descontado (garante
+  cobrança == total do servidor); senão, as linhas por item. Envia o **payer** (CPF). Resposta `201`:
+  `{ "pedido_id", "init_point" }`. Erros: `401`/`403`, `400 {"itens"}`, `409 {"disponibilidade"}`,
+  `502 {"detalhe"}`. Throttle `encomendas`.
+- `POST /api/cupom/validar/` — **público** (`AllowAny`, throttle `encomendas`): body `{ "codigo",
+  "itens" }` → pré-valida o cupom contra o carrinho e devolve `{ valido, desconto, total_bruto,
+  total, mensagem }` (PT-BR: inválido/expirado/não iniciado/esgotado/escopo não casa). NÃO aplica
+  nada — só informa antes de pagar; o desconto definitivo é recalculado no checkout.
 - `POST /api/webhooks/mercadopago/` — **público** (`AllowAny`, CSRF-exempt): recebe notificações
   `payment` do Mercado Pago. Valida a assinatura HMAC (`x-signature` + `x-request-id` +
   `MP_WEBHOOK_SECRET`) → `401` se inválida. Idempotente via `EventoPagamento`. Confirma o
@@ -277,9 +295,18 @@ Base: `/api/`. Respostas de lista são **paginadas** (`PageNumberPagination`, `P
   `status`), `DELETE /api/encomendas/{id}/`. Permissão por ação (`get_permissions`: `create` =
   `AllowAny`; demais = `IsAuthenticated`). O viewset aceita multipart (create) e JSON (PATCH).
 - **Pedidos** (`IsAuthenticated`, somente leitura): `GET /api/pedidos/` (lista paginada, itens
-  aninhados, filtro `?status=`), `GET /api/pedidos/{id}/`. Campos: `id`, `nome`, `contato`,
+  aninhados, filtro `?status=`), `GET /api/pedidos/{id}/`. Campos: `id`, `codigo`, `nome`, `contato`,
   `status`, `total`, `mp_preference_id`, `mp_payment_id`, `criado_em`, `expira_em`, `itens`
   (`[{ id, variacao, variacao_descricao, peca_nome, quantidade, preco_unit }]`). Anônimo → `401`.
+  `codigo` = código de compra legível e estável (`Pedido.codigo`, ex.: `PED-000042`, derivado do id —
+  sem campo/migration), usado pelo cliente, pelo admin (Vendas) e nas telas de retorno do pagamento.
+- **Promoções** (`PodeFinanceiro` — Dono ou funcionário com `acesso_financeiro`):
+  `GET/POST/PATCH/DELETE /api/promocoes/` (CRUD de promoções/cupons; filtros `?tipo_aplicacao=`,
+  `?ativo=`, `?escopo=`; `usos` é só leitura). Escopo por **peça(s)/categoria(s)** aceita várias
+  (`pecas`/`categorias` = listas de ids; expõe `pecas_nomes`/`categorias_nomes`). Funcionário sem
+  financeiro → `403`. Validações PT-BR: código único entre cupons, percentual ≤ 100, escopo exige ao
+  menos uma peça/categoria, fim depois do início (data **e hora**). O desconto em R$ **pode** passar
+  do preço da peça — o motor garante total ≥ 0 na hora de aplicar.
 - **Conexão do WhatsApp** (`IsAuthenticated`) — o backend é PROXY da Evolution (guarda a
   `EVOLUTION_API_KEY`; o navegador nunca a vê). Toda lógica em `catalogo/evolution.py` (degrada sem
   exceção, não loga segredo/QR):
@@ -465,6 +492,21 @@ Django por `http://backend:8000`.
 
 ## Histórico de mudanças
 
+- **2026-06-25** — **Promoções e cupons** (financeiro do admin). Novo model **`Promocao`** (cupom |
+  automática; %/R$; escopo tudo/peça/categoria com **M2M `pecas`/`categorias`** — várias por
+  promoção, migrations `0011`+`0012`; período; limite/usos; acumulável) + `Pedido.cupom`/
+  `Pedido.desconto`. Validação extra: fim depois do início (data e hora). Motor
+  `catalogo/promocoes.py` (desconto SÓ no servidor:
+  automática no preço de exibição, validação de cupom, acúmulo soma×maior, total nunca < 0).
+  Endpoints: `PromocaoViewSet` (`/promocoes/`, gate `PodeFinanceiro`), `POST /cupom/validar/`
+  (público), checkout aceita `cupom` e grava desconto/total descontado (MP recebe o total já
+  descontado), webhook conta `usos` só quando **pago** (lock). `PecaSerializer` expõe
+  `preco_promocional`/`em_promocao`. Novo `test_promocoes.py` (20 testes). Suíte: **152 testes**.
+- **2026-06-25** — **Código de compra legível** (`Pedido.codigo`, ex.: `PED-000042`): propriedade
+  derivada do id (sem campo/migration), única e fácil de ditar. Exposta no `PedidoSerializer`
+  (`codigo`) e exibida no cliente (Meus pedidos), no admin (Vendas — lista + detalhe) e nas telas de
+  retorno do pagamento (front formata o `external_reference` com o mesmo padrão via `lib/pedido.js`).
+  `test_conta.py` confere o formato. Suíte: **132 testes passando**.
 - **2026-06-25** — **Conta de cliente com login** (revertendo o "cliente sem login"; para enriquecer
   a compra/Mercado Pago). Novo model **`Cliente`** (OneToOne com `User`; `nome`, `cpf` único+validado,
   `telefone`; e-mail = login; `is_staff=False`, sem `Perfil`) — migration `0010` (+ `Pedido.cliente`

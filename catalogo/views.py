@@ -11,6 +11,7 @@ from decimal import Decimal
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.db.models import F
 from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
@@ -22,7 +23,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from . import evolution, pagamentos
+from . import evolution, pagamentos, promocoes
 from .comandos import interpretar
 from .estoque import disponibilidade
 from .models import (
@@ -38,6 +39,7 @@ from .models import (
     Peca,
     Pedido,
     Perfil,
+    Promocao,
     Variacao,
 )
 from .permissions import (
@@ -64,10 +66,12 @@ from .serializers import (
     CorSerializer,
     EncomendaCreateSerializer,
     EncomendaSerializer,
+    CupomValidarSerializer,
     ImagemSerializer,
     MudarSenhaSerializer,
     PecaSerializer,
     PedidoSerializer,
+    PromocaoSerializer,
     TokenComPapelSerializer,
     UsuarioCreateSerializer,
     UsuarioSerializer,
@@ -277,10 +281,31 @@ class CheckoutView(APIView):
                     status=status.HTTP_409_CONFLICT,
                 )
 
-        # Cria o pedido + itens com preço travado do banco.
+        # Itens para o motor de descontos (preço do banco, nunca do cliente).
+        itens_calc = [
+            {
+                "peca": por_id[vid].peca,
+                "quantidade": qtd,
+                "preco": por_id[vid].peca.preco,
+            }
+            for vid, qtd in pedido_por_variacao.items()
+        ]
+
+        # Cupom opcional: valida no servidor (silencioso — cupom inválido é
+        # ignorado, o cliente já viu o erro em /cupom/validar/ antes de pagar).
+        cupom = None
+        codigo_cupom = (dados.get("cupom") or "").strip()
+        if codigo_cupom:
+            cupom, _erro = promocoes.validar_cupom(codigo_cupom, itens_calc)
+
+        resumo = promocoes.calcular(itens_calc, cupom=cupom)
+        total = resumo["total"]
+        desconto = resumo["desconto"]
+
+        # Cria o pedido + itens (preço unitário de catálogo travado no item; o
+        # desconto fica no Pedido e o total já vai descontado ao MP).
         agora = timezone.now()
         expira_em = agora + timezone.timedelta(minutes=PEDIDO_VALIDADE_MINUTOS)
-        total = Decimal("0.00")
         itens_mp = []
 
         contato = cliente.telefone or cliente.usuario.email
@@ -290,7 +315,9 @@ class CheckoutView(APIView):
                 nome=cliente.nome,
                 contato=contato,
                 status=Pedido.Status.AGUARDANDO_PAGAMENTO,
-                total=Decimal("0.00"),
+                total=total,
+                desconto=desconto,
+                cupom=cupom,
                 expira_em=expira_em,
             )
             for vid, qtd in pedido_por_variacao.items():
@@ -302,7 +329,6 @@ class CheckoutView(APIView):
                     quantidade=qtd,
                     preco_unit=preco_unit,
                 )
-                total += preco_unit * qtd
                 itens_mp.append(
                     {
                         "title": variacao.peca.nome,
@@ -311,8 +337,19 @@ class CheckoutView(APIView):
                         "currency_id": "BRL",
                     }
                 )
-            pedido.total = total
-            pedido.save(update_fields=["total"])
+
+        # Se houve desconto, o MP recebe UMA linha com o total já descontado
+        # (garante que o valor cobrado == total do servidor, sem erro de rateio).
+        if desconto > 0:
+            n = sum(pedido_por_variacao.values())
+            itens_mp = [
+                {
+                    "title": f"{pedido.codigo} — {n} {'item' if n == 1 else 'itens'}",
+                    "quantity": 1,
+                    "unit_price": float(total),
+                    "currency_id": "BRL",
+                }
+            ]
 
         # Cria a preferência no Mercado Pago (fora da transação de banco).
         base_url = settings.MP_PUBLIC_URL.rstrip("/")
@@ -460,6 +497,13 @@ class WebhookMercadoPagoView(APIView):
             pedido.status = Pedido.Status.PAGO
             pedido.mp_payment_id = evento_id
             pedido.save(update_fields=["status", "mp_payment_id"])
+
+            # Conta o uso do cupom SÓ quando o pedido é pago (não no abandono),
+            # com lock na promoção para evitar corrida.
+            if pedido.cupom_id:
+                Promocao.objects.select_for_update().filter(pk=pedido.cupom_id).update(
+                    usos=F("usos") + 1
+                )
 
         # Sinal disparado fora da transação (consumidores externos: bot WhatsApp).
         compra_paga.send(sender=Pedido, pedido=pedido)
@@ -856,4 +900,71 @@ class ContaPedidosView(viewsets.ReadOnlyModelViewSet):
             Pedido.objects.filter(cliente=self.request.user.cliente)
             .prefetch_related("itens__variacao__peca")
             .all()
+        )
+
+
+# --------------------------------------------------------------------------
+# Promoções / cupons
+# --------------------------------------------------------------------------
+
+
+class PromocaoViewSet(viewsets.ModelViewSet):
+    """CRUD de promoções/cupons — gate FINANCEIRO (Dono ou acesso_financeiro)."""
+
+    queryset = Promocao.objects.prefetch_related("pecas", "categorias").all()
+    serializer_class = PromocaoSerializer
+    permission_classes = [PodeFinanceiro]
+    filterset_fields = ["tipo_aplicacao", "ativo", "escopo"]
+
+
+class CupomValidarView(APIView):
+    """Pré-valida um cupom contra o carrinho (público) e devolve o desconto.
+
+    NÃO aplica nada — só informa ao cliente, antes de pagar, se o cupom vale e
+    quanto abate. O desconto definitivo é recalculado no checkout (servidor).
+    """
+
+    permission_classes = [AllowAny]
+    throttle_scope = "encomendas"
+    throttle_classes = [ScopedRateThrottle]
+
+    def post(self, request, *args, **kwargs):
+        serializer = CupomValidarSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        dados = serializer.validated_data
+
+        # Monta os itens a partir do banco (preço nunca vem do cliente).
+        por_variacao = {}
+        for item in dados["itens"]:
+            vid = item["variacao_id"]
+            por_variacao[vid] = por_variacao.get(vid, 0) + item["quantidade"]
+        variacoes = Variacao.objects.select_related("peca").filter(
+            id__in=por_variacao.keys()
+        )
+        itens_calc = [
+            {"peca": v.peca, "quantidade": por_variacao[v.id], "preco": v.peca.preco}
+            for v in variacoes
+            if v.peca.ativo and v.peca.tipo == Peca.Tipo.PRONTA
+        ]
+        if not itens_calc:
+            return Response(
+                {"valido": False, "mensagem": "Adicione itens ao carrinho para usar um cupom."},
+                status=status.HTTP_200_OK,
+            )
+
+        cupom, erro = promocoes.validar_cupom(dados["codigo"], itens_calc)
+        if erro:
+            return Response({"valido": False, "mensagem": erro}, status=status.HTTP_200_OK)
+
+        resumo = promocoes.calcular(itens_calc, cupom=cupom)
+        return Response(
+            {
+                "valido": True,
+                "codigo": cupom.codigo,
+                "desconto": f"{resumo['desconto']:.2f}",
+                "total_bruto": f"{resumo['bruto']:.2f}",
+                "total": f"{resumo['total']:.2f}",
+                "mensagem": "Cupom aplicado.",
+            },
+            status=status.HTTP_200_OK,
         )

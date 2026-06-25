@@ -32,6 +32,11 @@ export default function PecaCard({ peca }) {
               Esgotado
             </span>
           )}
+          {peca.em_promocao && !esgotada && (
+            <span className="absolute right-2 top-2 rounded bg-acento-escuro px-2 py-1 text-xs font-medium text-white">
+              Promoção
+            </span>
+          )}
         </div>
 
         <div className="mt-3 px-0.5 pb-1">
@@ -43,10 +48,20 @@ export default function PecaCard({ peca }) {
           <h3 className="mt-0.5 font-display text-lg font-medium leading-snug text-texto">
             {peca.nome}
           </h3>
-          <Preco
-            valor={peca.preco}
-            className="mt-1 block text-base font-semibold text-texto"
-          />
+          {peca.em_promocao ? (
+            <div className="mt-1 flex items-baseline gap-2">
+              <Preco
+                valor={peca.preco_promocional}
+                className="text-base font-semibold text-acento-escuro"
+              />
+              <Preco valor={peca.preco} className="text-sm text-texto-suave line-through" />
+            </div>
+          ) : (
+            <Preco
+              valor={peca.preco}
+              className="mt-1 block text-base font-semibold text-texto"
+            />
+          )}
         </div>
       </div>
     </Link>

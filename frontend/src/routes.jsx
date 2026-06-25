@@ -33,6 +33,7 @@ import Cores from "./pages/admin/Cores.jsx";
 import Destaques from "./pages/admin/Destaques.jsx";
 import Encomendas from "./pages/admin/Encomendas.jsx";
 import Vendas from "./pages/admin/Vendas.jsx";
+import Promocoes from "./pages/admin/Promocoes.jsx";
 import Funcionarios from "./pages/admin/Funcionarios.jsx";
 import Whatsapp from "./pages/admin/Whatsapp.jsx";
 
@@ -109,6 +110,14 @@ export default function AppRoutes() {
           element={
             <ExigeFinanceiro>
               <Vendas />
+            </ExigeFinanceiro>
+          }
+        />
+        <Route
+          path="promocoes"
+          element={
+            <ExigeFinanceiro>
+              <Promocoes />
             </ExigeFinanceiro>
           }
         />

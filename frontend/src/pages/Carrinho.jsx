@@ -6,17 +6,44 @@ import { useConta } from "../context/ContaContext";
 import ItemCarrinho from "../components/ItemCarrinho";
 import Preco from "../components/Preco";
 import { Vazio } from "../components/Estado";
-import { criarCheckout } from "../lib/api";
+import { criarCheckout, validarCupom } from "../lib/api";
+
+const inputClasse =
+  "w-full rounded-lg border border-borda bg-superficie px-4 py-2.5 text-texto placeholder:italic placeholder:text-texto-suave/70 focus:border-acento-escuro focus:outline-none focus:ring-2 focus:ring-acento-escuro/30";
 
 export default function Carrinho() {
   const { itens, totalItens, totalPreco, ajustarQuantidade, remover, limpar } =
     useCarrinho();
   const { logado, cliente } = useConta();
   const [erroGeral, setErroGeral] = useState("");
+  const [cupomInput, setCupomInput] = useState("");
+  const [cupom, setCupom] = useState(null); // { codigo, desconto, total }
+  const [cupomErro, setCupomErro] = useState("");
 
   // Itens que podem ser pagos online (têm variação). Sob medida fica de fora.
   const itensPagaveis = itens.filter((i) => i.variacaoId != null);
   const itensSobMedida = itens.filter((i) => i.variacaoId == null);
+  const itensPayload = itensPagaveis.map((i) => ({
+    variacao_id: i.variacaoId,
+    quantidade: i.quantidade,
+  }));
+
+  const validarMut = useMutation({
+    mutationFn: () => validarCupom(cupomInput.trim(), itensPayload),
+    onSuccess: (dados) => {
+      if (dados?.valido) {
+        setCupom({ codigo: dados.codigo, desconto: dados.desconto, total: dados.total });
+        setCupomErro("");
+      } else {
+        setCupom(null);
+        setCupomErro(dados?.mensagem || "Cupom inválido.");
+      }
+    },
+    onError: (e) => {
+      setCupom(null);
+      setCupomErro(e.message);
+    },
+  });
 
   const checkout = useMutation({
     mutationFn: criarCheckout,
@@ -54,12 +81,7 @@ export default function Carrinho() {
   function finalizar() {
     setErroGeral("");
     if (itensPagaveis.length === 0) return;
-    checkout.mutate({
-      itens: itensPagaveis.map((i) => ({
-        variacao_id: i.variacaoId,
-        quantidade: i.quantidade,
-      })),
-    });
+    checkout.mutate({ itens: itensPayload, cupom: cupom?.codigo });
   }
 
   return (
@@ -102,6 +124,53 @@ export default function Carrinho() {
           </Link>
           . O pagamento abaixo cobre os demais itens.
         </p>
+      )}
+
+      {/* Cupom de desconto (pré-validado no servidor; o checkout reconfirma). */}
+      {itensPagaveis.length > 0 && (
+        <div className="mt-4 rounded-lg border border-borda bg-superficie p-4">
+          <label htmlFor="cupom" className="mb-1 block text-sm font-medium text-texto">
+            Cupom de desconto
+          </label>
+          <div className="flex gap-2">
+            <input
+              id="cupom"
+              value={cupomInput}
+              onChange={(e) => setCupomInput(e.target.value.toUpperCase())}
+              placeholder="Ex.: BEMVINDO"
+              className={inputClasse}
+            />
+            <button
+              type="button"
+              onClick={() => cupomInput.trim() && validarMut.mutate()}
+              disabled={validarMut.isPending || !cupomInput.trim()}
+              className="shrink-0 rounded-lg border border-borda px-4 py-2.5 text-sm font-medium text-texto transition hover:border-acento-escuro focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-escuro disabled:opacity-50"
+            >
+              {validarMut.isPending ? "Validando…" : "Aplicar"}
+            </button>
+          </div>
+          {cupomErro && <p className="mt-2 text-sm text-erro">{cupomErro}</p>}
+          {cupom && (
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm">
+              <span className="text-sucesso">
+                Cupom <strong>{cupom.codigo}</strong> aplicado (−
+                <Preco valor={cupom.desconto} />). Total com desconto:{" "}
+                <Preco valor={cupom.total} className="font-semibold text-texto" />
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setCupom(null);
+                  setCupomInput("");
+                  setCupomErro("");
+                }}
+                className="text-texto-suave underline underline-offset-2 hover:text-acento-escuro"
+              >
+                remover
+              </button>
+            </div>
+          )}
+        </div>
       )}
 
       <div className="mt-6">

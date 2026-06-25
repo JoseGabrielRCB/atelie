@@ -15,8 +15,18 @@ from .models import (
     Peca,
     Pedido,
     Perfil,
+    Promocao,
     Variacao,
 )
+
+
+@admin.register(Promocao)
+class PromocaoAdmin(admin.ModelAdmin):
+    list_display = ["nome", "tipo_aplicacao", "codigo", "tipo_desconto", "valor", "escopo", "ativo", "usos"]
+    list_filter = ["tipo_aplicacao", "tipo_desconto", "escopo", "ativo"]
+    search_fields = ["nome", "codigo"]
+    filter_horizontal = ["pecas", "categorias"]
+    readonly_fields = ["usos", "criado_em"]
 
 
 @admin.register(Cliente)

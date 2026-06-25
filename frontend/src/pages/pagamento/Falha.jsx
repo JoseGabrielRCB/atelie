@@ -1,11 +1,14 @@
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { XCircle } from "lucide-react";
+import { codigoPedido } from "../../lib/pedido";
 import { useSeo } from "../../seo/useSeo";
 
 // Retorno do Mercado Pago quando o pagamento falhou ou foi cancelado.
 // NÃO esvazia o carrinho — o cliente pode tentar de novo.
 export default function Falha() {
   useSeo({ title: "Pagamento não concluído | Ateliê da Sete" });
+  const [params] = useSearchParams();
+  const pedidoId = params.get("external_reference");
 
   return (
     <section className="mx-auto max-w-xl py-10 text-center">
@@ -17,6 +20,12 @@ export default function Falha() {
         O pagamento não foi aprovado ou foi cancelado. Seus itens continuam no
         pedido — você pode tentar novamente.
       </p>
+      {pedidoId && (
+        <p className="mt-2 text-sm text-texto-suave">
+          Código da compra:{" "}
+          <span className="font-mono font-medium text-texto">{codigoPedido(pedidoId)}</span>
+        </p>
+      )}
       <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
         <Link
           to="/carrinho"

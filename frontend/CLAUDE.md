@@ -115,7 +115,7 @@ frontend/
 | `/carrinho`   | `Carrinho`     | Lista de itens (ajustar/remover, **subtotal por linha**), **total dinâmico**. Finalizar **exige conta**: deslogado → CTA "Entrar"/"Criar conta" (`?next=/carrinho`); logado → resumo "Comprando como **nome** · CPF …" + **"Finalizar compra"** que chama `criarCheckout({itens})` (nome/contato/CPF vêm da conta) → redireciona ao **Mercado Pago** (`init_point`). Itens **sob medida** ficam de fora (aviso → Encomenda). Não limpa o carrinho aqui. Vazio: CTA para a vitrine. |
 | `/conta/login` `/conta/cadastro` | `conta/Login` · `conta/Cadastro` | **Páginas públicas** (não modal). Cadastro: nome, e-mail, **CPF (máscara+validação)**, telefone (máscara), senha+confirmar — validação completa (todos os erros de uma vez) e auto-login no sucesso. Login por e-mail+senha. Ambos respeitam `?next=`. |
 | `/conta`      | `conta/MinhaConta` (guardada) | Ver/editar **nome e telefone** (e-mail/CPF read-only) + **trocar senha**. Guardada por `RotaCliente`. |
-| `/conta/pedidos` | `conta/MeusPedidos` (guardada) | Histórico **do próprio cliente** (itens + total + selo de status do pagamento). Estados carregando/vazio/erro. |
+| `/conta/pedidos` | `conta/MeusPedidos` (guardada) | Histórico **do próprio cliente** (código `PED-000042` + data + itens + total + selo de status), do mais recente ao mais antigo. Estados carregando/vazio/erro. |
 | `/pagamento/sucesso`  | `pagamento/Sucesso`  | Retorno do MP (auto_return) após aprovação: "Pagamento aprovado!". **Limpa o carrinho** e linka à vitrine. Lê `external_reference` (= pedido_id) só para exibir. (CSR, fora do SSG.) |
 | `/pagamento/pendente` | `pagamento/Pendente` | Pagamento em processamento (ex.: Pix). Explica que será contatado; **não** limpa o carrinho. (CSR, fora do SSG.) |
 | `/pagamento/falha`    | `pagamento/Falha`    | Pagamento falhou/cancelado; "Voltar ao carrinho / Tentar de novo". **Não** limpa o carrinho. (CSR, fora do SSG.) |
@@ -332,6 +332,34 @@ pré-renderizadas, ex. `/peca/:id` e `/admin/*`, sobem por CSR). Preencher `SITE
 
 ## Histórico de mudanças
 
+- **2026-06-25** — **Promoções e cupons** no front. **Vitrine/Detalhe**: `PecaCard` e `DetalhePeca`
+  mostram preço **riscado + promocional** + selo "Promoção" quando `em_promocao` (a peça vai ao
+  carrinho pelo `preco_promocional`; o servidor reconfirma). **Carrinho**: campo **Cupom** + "Aplicar"
+  → `validarCupom` (mostra desconto e total; erros amigáveis) e o código segue no `criarCheckout`
+  (o checkout reconfirma no servidor). **Admin › Promoções** (`/admin/promocoes`, no grupo *Pedidos*,
+  visível só a Dono/`acesso_financeiro`): tabela paginada/ordenável + busca, criar/editar em modal
+  (validação de tipo/escopo/valor/datas/limite/acumulável), ativar/desativar, **ver detalhes**
+  (`DetalhePromocao` — modal read-only: situação/vigência agora, escopo completo, período legível,
+  usos, acumulável), ver usos, excluir (`ConfirmarExclusao`). Helpers em `lib/api.js` (`validarCupom`,
+  `listar/criar/atualizar/excluirPromocao`).
+  **Refino do form**: valor em R$ usa máscara BRL (`CampoPreco`) e em % tem sufixo "%" + teto 100;
+  escopo por **peça(s)/categoria(s)** com **seletor de busca + múltipla seleção** (`SeletorMulti`,
+  lista com **rolagem** + atalhos "Selecionar todas (filtradas)"/"Limpar"); **prévia** do preço com
+  desconto por peça (`PreviaDesconto`, rola com +10 peças); na tabela, o escopo mostra só os 5
+  primeiros nomes (+"…", lista completa no `title`); datas `datetime-local` com `step=60` e **`min` =
+  agora** (não seleciona passado) + fim ≥ início, enviadas como **ISO com fuso** (`new Date(local)
+  .toISOString()`) p/ o período valer no horário local escolhido; dica legível "dd/mm/aaaa às hh:mm";
+  **limite de usos até 10 dígitos**. `npm run build` (SSG) ok.
+- **2026-06-25** — **Código de compra legível** (`PED-000042`) exibido em **Meus pedidos** (cliente),
+  **Vendas** do admin (coluna + detalhe; vira o título do cartão no mobile) e nas três telas de
+  **retorno do pagamento**. Vem do backend (`pedido.codigo`); onde só há o id na URL (retornos),
+  `lib/pedido.js` (`codigoPedido`) formata igual. `npm run build` (SSG) ok.
+- **2026-06-25** — **Header responsivo** (só layout; design/tokens inalterados). Desktop (≥sm): uma
+  linha alinhada — logo · nav (Início/Vitrine/Encomenda) · conta (Entrar/Criar conta ou Minha
+  conta/Sair) + botão "Meu pedido" (`acento-escuro`). Mobile (<sm): logo + carrinho **compacto**
+  (ícone + badge sobreposto, sem texto) + **hambúrguer** que abre um painel com **navegação + conta**;
+  fecha no Esc, clique fora e ao escolher item (`aria-expanded`/`aria-controls`, foco visível). Sem
+  overflow/quebra em ~320–380px; sticky + backdrop-blur mantidos. `npm run build` (SSG) ok.
 - **2026-06-25** — **Rebrand para "Ateliê da Sete"** (Roupas & Artigos Religiosos — Umbanda +
   Candomblé, Campo Grande/MS, dona Gabrielly Liberato). Trocados **só copy/marca/contexto** (design
   intacto): nome/tagline em `config/site.js` (+ FAQ de 6 itens e depoimentos placeholder das copys),

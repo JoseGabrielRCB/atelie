@@ -78,6 +78,11 @@ export default function DetalhePeca() {
   const imagens = peca.imagens ?? [];
   const capa = imagemPrincipal(peca);
   const galeria = imagens.length ? imagens : capa ? [{ id: 0, arquivo: capa }] : [];
+  // Preço efetivo p/ exibição e carrinho: usa o promocional quando há promoção
+  // automática (o servidor recalcula no checkout — é a fonte da verdade).
+  const precoEfetivo = peca.em_promocao
+    ? Number(peca.preco_promocional)
+    : Number(peca.preco);
 
   function handleAdicionar() {
     if (temVariacoes && !variacaoEfetiva) {
@@ -87,7 +92,7 @@ export default function DetalhePeca() {
     adicionar({
       pecaId: peca.id,
       nome: peca.nome,
-      preco: peca.preco,
+      preco: precoEfetivo,
       imagem: capa,
       variacaoId: variacaoEfetiva?.id ?? null,
       tamanho: variacaoEfetiva?.tamanho ?? "",
@@ -122,10 +127,23 @@ export default function DetalhePeca() {
         <h1 className="mt-1 font-display text-3xl font-semibold text-texto">
           {peca.nome}
         </h1>
-        <Preco
-          valor={peca.preco}
-          className="mt-2 block text-xl font-semibold text-texto"
-        />
+        {peca.em_promocao ? (
+          <div className="mt-2 flex items-baseline gap-2">
+            <Preco
+              valor={peca.preco_promocional}
+              className="text-xl font-semibold text-acento-escuro"
+            />
+            <Preco valor={peca.preco} className="text-base text-texto-suave line-through" />
+            <span className="rounded bg-acento-escuro px-2 py-0.5 text-xs font-medium text-white">
+              Promoção
+            </span>
+          </div>
+        ) : (
+          <Preco
+            valor={peca.preco}
+            className="mt-2 block text-xl font-semibold text-texto"
+          />
+        )}
 
         {peca.tipo === "sob_medida" && (
           <p className="mt-3 inline-block rounded bg-borda/60 px-2 py-1 text-xs text-texto-suave">
@@ -214,7 +232,7 @@ export default function DetalhePeca() {
               Subtotal ({quantidade} {quantidade === 1 ? "item" : "itens"})
             </span>
             <Preco
-              valor={Number(peca.preco) * quantidade}
+              valor={precoEfetivo * quantidade}
               className="text-xl font-semibold text-texto"
             />
           </div>

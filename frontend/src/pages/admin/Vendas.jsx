@@ -137,6 +137,7 @@ export default function Vendas() {
           <table className="tabela-cartoes w-full text-left text-sm">
             <thead className="border-b border-borda text-texto-suave">
               <tr>
+                <th className="px-4 py-3 font-medium">Código</th>
                 <CabecalhoOrdenavel coluna="nome" rotulo="Cliente" ordenacao={ord.ordenacao} aoOrdenar={ord.alternar} />
                 <CabecalhoOrdenavel coluna="itens" rotulo="Itens" ordenacao={ord.ordenacao} aoOrdenar={ord.alternar} />
                 <CabecalhoOrdenavel coluna="total" rotulo="Total" ordenacao={ord.ordenacao} aoOrdenar={ord.alternar} />
@@ -154,7 +155,10 @@ export default function Vendas() {
                     onClick={() => setDetalheId(p.id)}
                     className="cursor-pointer transition hover:bg-borda/30"
                   >
-                    <td className="cel-principal px-4 py-3 font-medium text-texto">
+                    <td className="cel-principal px-4 py-3 font-mono font-medium text-texto" data-rotulo="Código">
+                      {p.codigo}
+                    </td>
+                    <td className="px-4 py-3 font-medium text-texto" data-rotulo="Cliente">
                       <span className="block max-w-[16rem] truncate" title={p.nome}>
                         {p.nome}
                       </span>
@@ -233,6 +237,7 @@ function DetalheVenda({ id, aoFechar }) {
   return (
     <div className="space-y-5">
       <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+        <Linha rotulo="Código" valor={<span className="font-mono">{p.codigo}</span>} />
         <Linha rotulo="Cliente" valor={p.nome} />
         <Linha rotulo="Contato" valor={p.contato || "—"} />
         <Linha

@@ -224,6 +224,9 @@ def test_pedidos_so_do_proprio_cliente(api, cliente):
     ids = [p["id"] for p in resp.data["results"]]
     assert meu.id in ids
     assert alheio.id not in ids
+    # Código legível e estável (PED-000042), exposto para o cliente.
+    item = next(p for p in resp.data["results"] if p["id"] == meu.id)
+    assert item["codigo"] == f"PED-{meu.id:06d}"
 
 
 def test_pedidos_exige_login(api):

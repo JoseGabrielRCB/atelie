@@ -55,7 +55,7 @@ export default function MeusPedidos() {
               <li key={p.id} className="rounded-lg border border-borda bg-superficie p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <p className="font-medium text-texto">Pedido #{p.id}</p>
+                    <p className="font-mono font-medium text-texto">{p.codigo}</p>
                     <p className="text-sm text-texto-suave">{dataCurta(p.criado_em)}</p>
                   </div>
                   <span className={"inline-flex items-center rounded px-2 py-0.5 text-xs font-medium " + info.classe}>

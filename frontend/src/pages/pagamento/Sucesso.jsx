@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { CheckCircle2 } from "lucide-react";
 import { useCarrinho } from "../../context/CarrinhoContext";
+import { codigoPedido } from "../../lib/pedido";
 import { useSeo } from "../../seo/useSeo";
 
 // Página de retorno do Mercado Pago após pagamento aprovado (auto_return).
@@ -33,7 +34,8 @@ export default function Sucesso() {
       </p>
       {pedidoId && (
         <p className="mt-2 text-sm text-texto-suave">
-          Número do pedido: <span className="font-medium">#{pedidoId}</span>
+          Código da compra:{" "}
+          <span className="font-mono font-medium text-texto">{codigoPedido(pedidoId)}</span>
         </p>
       )}
       <Link

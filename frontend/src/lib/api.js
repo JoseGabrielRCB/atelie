@@ -370,13 +370,18 @@ export async function listarTodasEncomendas(filtros = {}) {
 // navegador para `init_point`. Erros vêm por campo (nome/contato/itens),
 // 409 { disponibilidade: [...] } (estoque insuficiente) ou 502 { detalhe }.
 // Agora exige conta de cliente (auth do cliente). nome/contato/CPF vêm da conta
-// no servidor; o corpo só leva os itens.
-export function criarCheckout({ itens }) {
+// no servidor; o corpo só leva os itens (+ cupom opcional, validado no servidor).
+export function criarCheckout({ itens, cupom }) {
   return request("/checkout/", {
     method: "POST",
-    body: { itens },
+    body: cupom ? { itens, cupom } : { itens },
     auth: "cliente",
   });
+}
+
+// Pré-valida um cupom contra o carrinho (público) → { valido, desconto, total, mensagem }.
+export function validarCupom(codigo, itens) {
+  return request("/cupom/validar/", { method: "POST", body: { codigo, itens } });
 }
 
 export const obterEncomenda = (id) =>
@@ -464,6 +469,31 @@ export async function listarUsuarios() {
   }
   return todos;
 }
+
+// Promoções/cupons (admin financeiro) — percorre a paginação.
+export async function listarPromocoes() {
+  let url = "/promocoes/";
+  const todas = [];
+  let guarda = 0;
+  while (url && guarda < 100) {
+    const pagina = await request(url, { auth: true });
+    todas.push(...(pagina.results ?? (Array.isArray(pagina) ? pagina : [])));
+    if (!Array.isArray(pagina) && pagina.next) {
+      const u = new URL(pagina.next);
+      url = u.pathname.replace(/^\/api/, "") + u.search;
+    } else {
+      url = null;
+    }
+    guarda += 1;
+  }
+  return todas;
+}
+export const criarPromocao = (dados) =>
+  request("/promocoes/", { method: "POST", body: dados, auth: true });
+export const atualizarPromocao = (id, dados) =>
+  request(`/promocoes/${id}/`, { method: "PATCH", body: dados, auth: true });
+export const excluirPromocao = (id) =>
+  request(`/promocoes/${id}/`, { method: "DELETE", auth: true });
 
 export const criarUsuario = (dados) =>
   request("/usuarios/", { method: "POST", body: dados, auth: true });
