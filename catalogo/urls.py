@@ -22,6 +22,9 @@ from .views import (
     PecaViewSet,
     PedidoViewSet,
     PromocaoViewSet,
+    RelatorioProdutosVendidosView,
+    RelatorioResumoMesView,
+    RelatorioVendasPeriodoView,
     UsuarioViewSet,
     VariacaoViewSet,
     WebhookMercadoPagoView,
@@ -57,6 +60,22 @@ urlpatterns = [
     path("conta/senha/", ContaSenhaView.as_view(), name="conta-senha"),
     path("checkout/", CheckoutView.as_view(), name="checkout"),
     path("cupom/validar/", CupomValidarView.as_view(), name="cupom-validar"),
+    # Relatórios financeiros (gate PodeFinanceiro; ?formato=csv|pdf exporta).
+    path(
+        "relatorios/vendas-por-periodo/",
+        RelatorioVendasPeriodoView.as_view(),
+        name="relatorio-vendas-periodo",
+    ),
+    path(
+        "relatorios/produtos-mais-vendidos/",
+        RelatorioProdutosVendidosView.as_view(),
+        name="relatorio-produtos-vendidos",
+    ),
+    path(
+        "relatorios/resumo-do-mes/",
+        RelatorioResumoMesView.as_view(),
+        name="relatorio-resumo-mes",
+    ),
     path(
         "webhooks/mercadopago/",
         WebhookMercadoPagoView.as_view(),

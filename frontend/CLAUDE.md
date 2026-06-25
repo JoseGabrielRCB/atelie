@@ -332,6 +332,24 @@ pré-renderizadas, ex. `/peca/:id` e `/admin/*`, sobem por CSR). Preencher `SITE
 
 ## Histórico de mudanças
 
+- **2026-06-25** — **Código de rastreio dos Correios** no front. **Admin › Vendas**: o modal de
+  detalhe ganhou um `RastreioEditor` — campo `codigo_rastreio` editável **só em pedido pago** (salva
+  via `atualizarRastreio` → `PATCH /pedidos/{id}/rastreio/`, com feedback e invalidação das queries
+  `["admin","pedido",id]`/`["admin","pedidos"]`); ícone `Truck` discreto na lista quando há rastreio;
+  notas de "somente leitura" viraram "somente leitura, exceto o código de rastreio". **Cliente ›
+  Meus pedidos**: quando há `codigo_rastreio`, bloco com o código + **Copiar** (`navigator.clipboard`)
+  + link "Acompanhar nos Correios" (site oficial, nova aba). Novo helper `atualizarRastreio` no
+  `lib/api.js`.
+- **2026-06-25** — **Relatórios (financeiro)** no front. Nova página **`/admin/relatorios`**
+  (`pages/admin/Relatorios.jsx`, gate `ExigeFinanceiro`; item "Relatórios" no grupo *Pedidos* do
+  `AdminNav`, só Dono/`acesso_financeiro`) com **3 relatórios em abas**: Vendas por período (filtro
+  de datas + granularidade; cartões faturamento/pedidos/ticket; `BarChart`; tabela), Produtos mais
+  vendidos (datas + top N; `BarChart` horizontal; tabela quantidade/receita), Resumo do mês
+  (`type=month`; cartões + tabela de **cupons** usados). Tabelas paginadas (10) e ordenáveis
+  (`useOrdenacao`/`usePaginacao`); estados carregando/vazio/erro; gráficos `recharts` responsivos.
+  **Exportar** com caixa de formato **CSV/PDF** → `baixarRelatorio` (download **autenticado** por
+  blob — busca com o token e dispara `<a download>`). Novos helpers em `lib/api.js`
+  (`relatorioVendasPeriodo`/`relatorioProdutosVendidos`/`relatorioResumoMes`/`baixarRelatorio`).
 - **2026-06-25** — **Promoções e cupons** no front. **Vitrine/Detalhe**: `PecaCard` e `DetalhePeca`
   mostram preço **riscado + promocional** + selo "Promoção" quando `em_promocao` (a peça vai ao
   carrinho pelo `preco_promocional`; o servidor reconfirma). **Carrinho**: campo **Cupom** + "Aplicar"

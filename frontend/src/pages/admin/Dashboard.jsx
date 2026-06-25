@@ -332,7 +332,7 @@ function CartaoMetrica({ cartao, onClick }) {
       <span className="text-sm text-texto-suave">{titulo}</span>
       <span
         className={
-          "font-display text-2xl font-semibold sm:text-3xl " +
+          "font-sans text-2xl font-semibold sm:text-3xl " +
           (destaque ? "text-erro" : "text-texto")
         }
       >

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
 import { usePeca } from "../hooks/usePeca";
 import { useCarrinho } from "../context/CarrinhoContext";
 import {
@@ -106,20 +107,24 @@ export default function DetalhePeca() {
   }
 
   return (
-    <article className="grid gap-8 md:grid-cols-2">
-      {/* Galeria (carretel: principal → última, com setas e miniaturas) */}
-      <Galeria key={peca.id} imagens={galeria} alt={peca.nome} />
+    <div>
+      {/* Voltar à vitrine: canto superior esquerdo, destacado e acima da grade
+          (mesma posição no desktop e no mobile). */}
+      <Link
+        to="/vitrine"
+        className="mb-5 inline-flex items-center gap-1.5 rounded-lg border border-borda bg-superficie px-3 py-2 text-sm font-medium text-acento-escuro transition hover:border-acento-escuro hover:bg-acento/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-escuro focus-visible:ring-offset-2 focus-visible:ring-offset-fundo"
+      >
+        <ArrowLeft size={16} aria-hidden="true" />
+        Voltar à vitrine
+      </Link>
 
-      {/* Informações */}
-      <div>
-        <Link
-          to="/"
-          className="mb-4 inline-block text-sm text-texto-suave transition hover:text-acento-escuro"
-        >
-          ← Voltar à vitrine
-        </Link>
+      <article className="grid gap-8 md:grid-cols-2">
+        {/* Galeria (carretel: principal → última, com setas e miniaturas) */}
+        <Galeria key={peca.id} imagens={galeria} alt={peca.nome} />
 
-        {peca.categoria_nome && (
+        {/* Informações */}
+        <div>
+          {peca.categoria_nome && (
           <p className="text-xs uppercase tracking-wide text-texto-suave">
             {peca.categoria_nome}
           </p>
@@ -257,6 +262,7 @@ export default function DetalhePeca() {
           )}
         </div>
       </div>
-    </article>
+      </article>
+    </div>
   );
 }

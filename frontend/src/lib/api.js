@@ -418,6 +418,15 @@ export async function listarTodosPedidos(filtros = {}, { auth = true } = {}) {
 
 export const obterPedido = (id) => request(`/pedidos/${id}/`, { auth: true });
 
+// Grava/edita o código de rastreio dos Correios (só em pedido pago — o servidor
+// valida). Não altera o status; demais campos seguem somente leitura.
+export const atualizarRastreio = (id, codigo_rastreio) =>
+  request(`/pedidos/${id}/rastreio/`, {
+    method: "PATCH",
+    body: { codigo_rastreio },
+    auth: true,
+  });
+
 // ----------------------------------------------------------------------------
 // Conexão do WhatsApp (bot do dono) — admin. O backend faz de proxy para a
 // Evolution; a chave da Evolution NUNCA chega ao navegador.
@@ -494,6 +503,51 @@ export const atualizarPromocao = (id, dados) =>
   request(`/promocoes/${id}/`, { method: "PATCH", body: dados, auth: true });
 export const excluirPromocao = (id) =>
   request(`/promocoes/${id}/`, { method: "DELETE", auth: true });
+
+// ----------------------------------------------------------------------------
+// Relatórios financeiros (admin) — agregações no servidor + exportação.
+// ----------------------------------------------------------------------------
+export const relatorioVendasPeriodo = (params = {}) =>
+  request(`/relatorios/vendas-por-periodo/${querystring(params)}`, { auth: true });
+export const relatorioProdutosVendidos = (params = {}) =>
+  request(`/relatorios/produtos-mais-vendidos/${querystring(params)}`, { auth: true });
+export const relatorioResumoMes = (params = {}) =>
+  request(`/relatorios/resumo-do-mes/${querystring(params)}`, { auth: true });
+
+// Baixa o relatório como arquivo (CSV/PDF). Precisa do header de auth, então não
+// dá para usar um <a href> simples: busca o blob com o token e dispara o download.
+export async function baixarRelatorio(slug, params = {}) {
+  const caminho = `/relatorios/${slug}/${querystring(params)}`;
+  const headers = {};
+  if (tokens.access) headers.Authorization = `Bearer ${tokens.access}`;
+
+  let resp;
+  try {
+    resp = await fetch(`${BASE}/api${caminho}`, { headers });
+  } catch {
+    throw new Error("Não foi possível conectar ao servidor.");
+  }
+  // Tenta renovar o access uma vez (mesma lógica do request()).
+  if (resp.status === 401 && (await renovarAccess(tokens))) {
+    headers.Authorization = `Bearer ${tokens.access}`;
+    resp = await fetch(`${BASE}/api${caminho}`, { headers });
+  }
+  if (!resp.ok) throw new Error(mensagemDeErro(resp.status, await corpoJson(resp)));
+
+  const blob = await resp.blob();
+  const cd = resp.headers.get("Content-Disposition") || "";
+  const m = /filename="?([^"]+)"?/.exec(cd);
+  const nome = m ? m[1] : `${slug}.${(params.formato || "csv")}`;
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = nome;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
 export const criarUsuario = (dados) =>
   request("/usuarios/", { method: "POST", body: dados, auth: true });

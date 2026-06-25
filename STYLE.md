@@ -107,6 +107,10 @@ vírgula decimal).
 ## Tipografia
 
 - **Cormorant Garamond** (títulos, serifada elegante) + **Inter** (texto/UI). Google Fonts.
+- **Números sempre em Inter (`font-sans`), nunca em `font-display`.** A Cormorant usa algarismos
+  *old-style* (alturas variáveis com descendentes — 3/4/7/9 "descem"), que deixam preços, totais,
+  métricas e códigos **desalinhados/tortos**. Cormorant fica só em **títulos** (palavras). Qualquer
+  campo numérico (preço, total, valor de métrica, contadores) usa `font-sans`.
 
 | Nível | Tamanho (mobile/desktop) | Peso | Cor |
 |-------|--------------------------|------|-----|
@@ -239,7 +243,8 @@ Mesma identidade, porém **mais utilitário**: foco em tabelas e formulários cl
   fechar no topo (ícone lucide). Componente único reutilizável (`components/admin/Modal.jsx`).
 - **Navegação agrupada (menu do painel):** a barra do admin tem **5 itens de topo** — Resumo (link
   direto), **Catálogo ▾** (Peças/Categorias/Cores/Destaques), Estoque (link direto), **Pedidos ▾**
-  (Encomendas/Vendas) e **Configurações ▾** (Funcionários/WhatsApp) — num componente único
+  (Encomendas/Vendas/Promoções/Relatórios — os 3 últimos só com financeiro) e **Configurações ▾**
+  (Funcionários/WhatsApp) — num componente único
   (`components/admin/AdminNav.jsx`). Itens com submenu mostram um `ChevronDown` (lucide). **Desktop:**
   o dropdown abre por **hover + clique + foco do teclado** (nunca só hover); fecha ao tirar o mouse
   (atraso ~150ms), no `Esc` e ao clicar fora; o item de topo fica em estado **ativo** (`acento-escuro`)
@@ -298,11 +303,39 @@ Mesma identidade, porém **mais utilitário**: foco em tabelas e formulários cl
 - **Olho = ver, lápis = editar:** o ícone `Eye` abre uma **visualização SÓ LEITURA** (sem inputs;
   `DetalhePecaModal`); a edição fica num ícone `Pencil` separado (`EditarPecaModal`). Não usar o olho
   para abrir o formulário de edição.
-- **Seção só-leitura (Vendas):** os pedidos do pagamento online (Mercado Pago) aparecem numa tabela
-  **ordenável** (Cliente, Itens, Total, Status, Data) com filtro por status e **modal de detalhe**
-  (dados do cliente, total/datas, itens e IDs do MP). É **somente leitura** — sem editar/excluir nem
-  seleção em massa; uma **nota** no modal lembra que estorno/cancelamento são no painel do Mercado
-  Pago. Selos: `pago`→verde, `aguardando_pagamento`→acento, `expirado`→cinza, `cancelado`→vermelho.
+- **Relatórios (financeiro):** seção `/admin/relatorios` (gate `acesso_financeiro`/Dono) com **3
+  relatórios** em **abas** (Vendas por período · Produtos mais vendidos · Resumo do mês). Cada um:
+  **filtros** (datas `type=date` com `max`=hoje / `type=month` para o resumo; granularidade dia/
+  semana/mês; top N), **cartões** de indicadores (número em `font-sans`), **gráfico** (`recharts`,
+  mesma paleta dos tokens, altura responsiva, fora do SSG) e **tabela** paginada (10) e ordenável
+  (`useOrdenacao`/`usePaginacao`/`CabecalhoOrdenavel`/`OrdenarMobile`). **Exportar** com **caixa de
+  opção de formato** (CSV/PDF) + botão (`Download` lucide) — o download é autenticado (busca o blob
+  com o token e dispara via `<a download>`, pois um `href` simples não manda o header). Estados
+  carregando/vazio/erro e mensagens amigáveis. **Tudo é só leitura** — os números são agregados no
+  servidor (vendas pagas); o front nunca recalcula. A análise de cupons fica dentro do Resumo do mês.
+- **Seção Vendas (somente leitura, EXCETO o código de rastreio):** os pedidos do pagamento online
+  (Mercado Pago) aparecem numa tabela **ordenável** (Cliente, Itens, Total, Status, Data) com filtro
+  por status e **modal de detalhe** (dados do cliente, total/datas, itens e IDs do MP). Nada de
+  editar/excluir nem seleção em massa **a única edição permitida é o `codigo_rastreio` dos Correios**,
+  num campo no detalhe **só habilitado em pedido `pago`** (salva via PATCH com feedback; o status
+  **não** muda). Indicador discreto (ícone `Truck`) na lista quando o pedido já tem rastreio. Uma
+  **nota** no modal lembra que estorno/cancelamento são no painel do Mercado Pago. Selos: `pago`→verde,
+  `aguardando_pagamento`→acento, **`em_revisao`→vermelho**, `expirado`→cinza, `cancelado`→vermelho.
+- **Pedido "em revisão" (atenção):** pago no MP mas NÃO atendido (valor divergente, pago após a
+  expiração, ou sem estoque na confirmação). Aparece com **selo de atenção** (vermelho) + contador no
+  topo de Vendas, **filtro** próprio, e no detalhe mostra o **motivo** + um aviso de que o **estorno é
+  feito no painel do Mercado Pago** (não dá para estornar pelo site). O estoque **não** é baixado
+  nesses casos. Continua tudo só-leitura (a única edição é o rastreio).
+- **Pedido em revisão/recusa no cliente (Meus pedidos):** quando o pedido cai em revisão (pago no MP
+  mas não concluído), um aviso **amigável e sem jargão** explica o que houve e que, se houve cobrança,
+  **o valor será estornado**, com link para **falar no WhatsApp** (ex.: pós-expiração: "O tempo de
+  reserva deste pedido expirou e não conseguimos concluí-lo. Se você foi cobrado, o valor será
+  estornado."). Nunca usar termos técnicos/inglês — o detalhe fica no log do servidor (regra de Erros).
+- **Rastreio no cliente (Meus pedidos):** quando o pedido tem `codigo_rastreio`, um bloco discreto
+  mostra o **código** (em `font-mono`), um botão **Copiar** (`Copy`→`Check` ao copiar) e um botão
+  primário **"Acompanhar nos Correios"** (`Truck`) que abre o site oficial de rastreamento em nova
+  aba (`rastreamento.correios.com.br`). Como não há URL pública estável que abra já com o código, a
+  dica orienta o cliente a **colar** o código copiado. Mobile-first.
 - **Gráficos do painel (Dashboard):** usar `recharts` com a paleta dos tokens (`acento-escuro`
   `#7e4e2e`, `acento` `#b07a56`, `sucesso` `#2e6b49`, `esgotado` `#8c887f`; grade `borda` `#d6cfc4`,
   eixos `texto-suave` `#57534e`). Cartões em `superficie` com borda 8px; "Sem dados ainda." quando
@@ -342,6 +375,25 @@ Mesma identidade, porém **mais utilitário**: foco em tabelas e formulários cl
   `/admin` fora do índice.
 
 ## Histórico
+- 25/06/2026 — **Pedido "em revisão"**: pago no MP mas não atendido (valor divergente / pago após
+  expiração / sem estoque) ganha selo de atenção + contador + filtro em Vendas, com motivo e nota de
+  estorno no painel do MP no detalhe (estoque não baixa). No cliente (Meus pedidos), aviso amigável
+  sem jargão + link para o WhatsApp. Decisões da auditoria financeira implementadas.
+- 25/06/2026 — **Código de rastreio dos Correios**: Admin › Vendas deixou de ser 100% só-leitura —
+  o detalhe da venda **paga** ganhou um campo editável de `codigo_rastreio` (PATCH + feedback; status
+  não muda) e a lista mostra um ícone `Truck` discreto quando há rastreio. Cliente › Meus pedidos
+  exibe o código (com **Copiar**) + botão "Acompanhar nos Correios" (site oficial em nova aba).
+  Regra atualizada: Vendas é "somente leitura, exceto o código de rastreio".
+- 25/06/2026 — **Relatórios (financeiro)**: nova seção `/admin/relatorios` (gate financeiro) com 3
+  relatórios em abas (Vendas por período, Produtos mais vendidos, Resumo do mês com análise de
+  cupons). Cada um com filtros (datas/granularidade/top), cartões + gráfico `recharts` + tabela
+  paginada/ordenável e **Exportar** (caixa de opção CSV/PDF; download autenticado por blob).
+  Item **Relatórios** adicionado ao grupo Pedidos do menu (só Dono/`acesso_financeiro`). Tudo
+  agregado no servidor (vendas pagas) — só leitura.
+- 25/06/2026 — **Números em Inter, não Cormorant**: preços/totais/valores de métrica que usavam
+  `font-display` (Cormorant, algarismos *old-style*, ficavam tortos/desalinhados) passaram a
+  `font-sans` (Meus pedidos, Carrinho, cartões de métrica do Resumo, detalhe da peça no admin).
+  Cormorant fica só em títulos. Registrada a regra na Tipografia.
 - 25/06/2026 — **Promoções e cupons**: preço **riscado + promocional** + selo "Promoção" na
   vitrine/detalhe (promoção automática); campo de **cupom** no carrinho (desconto/total ao aplicar,
   reconfirmado no servidor); seção **Promoções** no admin (grupo Pedidos, só Dono/`acesso_financeiro`)

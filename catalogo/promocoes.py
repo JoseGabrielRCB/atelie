@@ -8,7 +8,7 @@ partir do banco. Regras (ver CLAUDE.md):
   MAIOR desconto entre os dois. Total final nunca < 0.
 """
 
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.db.models import F, Q
 from django.utils import timezone
@@ -16,6 +16,8 @@ from django.utils import timezone
 from .models import Promocao
 
 CENTAVO = Decimal("0.01")
+# Dinheiro arredonda para centavos com ROUND_HALF_UP (não o HALF_EVEN padrão do
+# Decimal). Usado em todo o motor para o cálculo bater com a expectativa comercial.
 
 
 def promocoes_automaticas_ativas(agora=None):
@@ -52,7 +54,7 @@ def preco_com_promocao(peca, promos):
     promo = melhor_automatica(peca, promos)
     if promo is None:
         return preco, False
-    novo = (preco - promo.desconto_unitario(preco)).quantize(CENTAVO)
+    novo = (preco - promo.desconto_unitario(preco)).quantize(CENTAVO, rounding=ROUND_HALF_UP)
     return novo, novo < preco
 
 
@@ -104,13 +106,13 @@ def _desconto_cupom(cupom, itens, precos_base):
         for item, base in zip(itens, precos_base):
             if cupom.casa_peca(item["peca"]):
                 total += (base * item["quantidade"] * cupom.valor / Decimal(100))
-        return total.quantize(CENTAVO)
+        return total.quantize(CENTAVO, rounding=ROUND_HALF_UP)
     # Valor fixo: abate do subtotal (no escopo), limitado a ele.
     subtotal = sum(
         (base * item["quantidade"] for item, base in zip(itens, precos_base) if cupom.casa_peca(item["peca"])),
         Decimal("0.00"),
     )
-    return min(cupom.valor, subtotal).quantize(CENTAVO)
+    return min(cupom.valor, subtotal).quantize(CENTAVO, rounding=ROUND_HALF_UP)
 
 
 def calcular(itens, cupom=None, promos_auto=None, agora=None):
@@ -154,14 +156,14 @@ def calcular(itens, cupom=None, promos_auto=None, agora=None):
     else:
         desconto = desconto_auto
 
-    desconto = min(desconto, bruto).quantize(CENTAVO)
-    total = (bruto - desconto).quantize(CENTAVO)
+    desconto = min(desconto, bruto).quantize(CENTAVO, rounding=ROUND_HALF_UP)
+    total = (bruto - desconto).quantize(CENTAVO, rounding=ROUND_HALF_UP)
     if total < 0:
         total = Decimal("0.00")
     return {
-        "bruto": bruto.quantize(CENTAVO),
-        "desconto_auto": desconto_auto.quantize(CENTAVO),
-        "desconto_cupom": desconto_cupom.quantize(CENTAVO),
+        "bruto": bruto.quantize(CENTAVO, rounding=ROUND_HALF_UP),
+        "desconto_auto": desconto_auto.quantize(CENTAVO, rounding=ROUND_HALF_UP),
+        "desconto_cupom": desconto_cupom.quantize(CENTAVO, rounding=ROUND_HALF_UP),
         "desconto": desconto,
         "total": total,
     }

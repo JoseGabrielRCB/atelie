@@ -6,7 +6,7 @@ definido como permissão padrão no settings).
 
 import logging
 import secrets
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -16,6 +16,7 @@ from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import serializers, status, viewsets
+from rest_framework.decorators import action
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -23,7 +24,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from . import evolution, pagamentos, promocoes
+from . import evolution, pagamentos, promocoes, relatorios
 from .comandos import interpretar
 from .estoque import disponibilidade
 from .models import (
@@ -247,69 +248,75 @@ class CheckoutView(APIView):
             vid = item["variacao_id"]
             pedido_por_variacao[vid] = pedido_por_variacao.get(vid, 0) + item["quantidade"]
 
-        variacoes = (
-            Variacao.objects.select_related("peca")
-            .filter(id__in=pedido_por_variacao.keys())
-        )
-        por_id = {v.id: v for v in variacoes}
-
-        # Valida existência, peça ativa e do tipo "pronta".
-        for vid in pedido_por_variacao:
-            variacao = por_id.get(vid)
-            if variacao is None:
-                return Response(
-                    {"itens": [f"Variação {vid} não encontrada."]},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            if not variacao.peca.ativo or variacao.peca.tipo != Peca.Tipo.PRONTA:
-                return Response(
-                    {"itens": ["Esta peça não está disponível para compra online."]},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-        # Checa disponibilidade (estoque − reservas ativas).
-        disp = disponibilidade(por_id.values())
-        for vid, qtd in pedido_por_variacao.items():
-            if qtd > disp.get(vid, 0):
-                return Response(
-                    {
-                        "disponibilidade": [
-                            "Estoque insuficiente para um ou mais itens. "
-                            "Atualize o carrinho e tente novamente."
-                        ]
-                    },
-                    status=status.HTTP_409_CONFLICT,
-                )
-
-        # Itens para o motor de descontos (preço do banco, nunca do cliente).
-        itens_calc = [
-            {
-                "peca": por_id[vid].peca,
-                "quantidade": qtd,
-                "preco": por_id[vid].peca.preco,
-            }
-            for vid, qtd in pedido_por_variacao.items()
-        ]
-
-        # Cupom opcional: valida no servidor (silencioso — cupom inválido é
-        # ignorado, o cliente já viu o erro em /cupom/validar/ antes de pagar).
-        cupom = None
-        codigo_cupom = (dados.get("cupom") or "").strip()
-        if codigo_cupom:
-            cupom, _erro = promocoes.validar_cupom(codigo_cupom, itens_calc)
-
-        resumo = promocoes.calcular(itens_calc, cupom=cupom)
-        total = resumo["total"]
-        desconto = resumo["desconto"]
-
-        # Cria o pedido + itens (preço unitário de catálogo travado no item; o
-        # desconto fica no Pedido e o total já vai descontado ao MP).
         agora = timezone.now()
         expira_em = agora + timezone.timedelta(minutes=PEDIDO_VALIDADE_MINUTOS)
         itens_mp = []
-
         contato = cliente.telefone or cliente.usuario.email
+
+        # Reserva travada: valida disponibilidade e cria o Pedido/itens dentro de
+        # uma transação com lock nas variações (of="self") — dois checkouts
+        # simultâneos da MESMA última unidade são serializados, então o segundo já
+        # vê a reserva do primeiro e recebe 409 (reduz a corrida na origem). O
+        # retorno de erro dentro do bloco apenas encerra a transação (nada gravado).
         with transaction.atomic():
+            variacoes = (
+                Variacao.objects.select_for_update(of=("self",))
+                .select_related("peca")
+                .filter(id__in=pedido_por_variacao.keys())
+            )
+            por_id = {v.id: v for v in variacoes}
+
+            # Valida existência, peça ativa e do tipo "pronta".
+            for vid in pedido_por_variacao:
+                variacao = por_id.get(vid)
+                if variacao is None:
+                    return Response(
+                        {"itens": [f"Variação {vid} não encontrada."]},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                if not variacao.peca.ativo or variacao.peca.tipo != Peca.Tipo.PRONTA:
+                    return Response(
+                        {"itens": ["Esta peça não está disponível para compra online."]},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+            # Disponibilidade sob lock (estoque − reservas ativas).
+            disp = disponibilidade(por_id.values())
+            for vid, qtd in pedido_por_variacao.items():
+                if qtd > disp.get(vid, 0):
+                    return Response(
+                        {
+                            "disponibilidade": [
+                                "Estoque insuficiente para um ou mais itens. "
+                                "Atualize o carrinho e tente novamente."
+                            ]
+                        },
+                        status=status.HTTP_409_CONFLICT,
+                    )
+
+            # Itens para o motor de descontos (preço do banco, nunca do cliente).
+            itens_calc = [
+                {
+                    "peca": por_id[vid].peca,
+                    "quantidade": qtd,
+                    "preco": por_id[vid].peca.preco,
+                }
+                for vid, qtd in pedido_por_variacao.items()
+            ]
+
+            # Cupom opcional: valida no servidor (silencioso — cupom inválido é
+            # ignorado, o cliente já viu o erro em /cupom/validar/ antes de pagar).
+            cupom = None
+            codigo_cupom = (dados.get("cupom") or "").strip()
+            if codigo_cupom:
+                cupom, _erro = promocoes.validar_cupom(codigo_cupom, itens_calc)
+
+            resumo = promocoes.calcular(itens_calc, cupom=cupom)
+            total = resumo["total"]
+            desconto = resumo["desconto"]
+
+            # Cria o pedido + itens (preço unitário de catálogo travado no item; o
+            # desconto fica no Pedido e o total já vai descontado ao MP).
             pedido = Pedido.objects.create(
                 cliente=cliente,
                 nome=cliente.nome,
@@ -450,11 +457,39 @@ class WebhookMercadoPagoView(APIView):
         if not external_reference:
             return Response(status=status.HTTP_200_OK)
 
-        self._confirmar_pedido(external_reference, str(data_id))
+        # Valor efetivamente aprovado no MP (anti-fraude: tem de bater com o total).
+        valor_pago = pagamento.get("transaction_amount")
+        self._confirmar_pedido(external_reference, str(data_id), valor_pago)
         return Response(status=status.HTTP_200_OK)
 
-    def _confirmar_pedido(self, pedido_id, evento_id):
-        """Decrementa estoque e marca o pedido como pago, com lock + idempotência."""
+    @staticmethod
+    def _valor_confere(valor_pago, total) -> bool:
+        """True se o valor aprovado no MP bate com o total do pedido (±1 centavo)."""
+        try:
+            pago = Decimal(str(valor_pago))
+        except (InvalidOperation, TypeError, ValueError):
+            return False
+        return abs(pago - total) <= Decimal("0.01")
+
+    @staticmethod
+    def _marcar_em_revisao(pedido, motivo, evento_id):
+        """Pago no MP mas NÃO atendido: vira 'em revisão' (dono trata/estorna).
+
+        Nunca baixa estoque nem conta cupom. O motivo fica registrado para o admin.
+        """
+        pedido.status = Pedido.Status.EM_REVISAO
+        pedido.motivo_revisao = motivo
+        pedido.mp_payment_id = evento_id
+        pedido.save(update_fields=["status", "motivo_revisao", "mp_payment_id"])
+
+    def _confirmar_pedido(self, pedido_id, evento_id, valor_pago=None):
+        """Confirma o pagamento (baixa estoque + marca pago), com lock + idempotência.
+
+        Três casos viram **em revisão** (pago no MP, mas não atendido — sem baixar
+        estoque; o dono trata/estorna pelo admin): valor divergente do total,
+        pagamento após a expiração e falta de estoque na hora da confirmação.
+        Logs sem PII; idempotência preservada via ``EventoPagamento``.
+        """
         with transaction.atomic():
             # Idempotência forte dentro da transação: cria o evento primeiro;
             # se já existir (corrida), aborta sem mexer no estoque.
@@ -467,7 +502,30 @@ class WebhookMercadoPagoView(APIView):
             except Pedido.DoesNotExist:
                 return
 
-            if pedido.status == Pedido.Status.PAGO:
+            # Já resolvido: não reprocessa (idempotência de estado).
+            if pedido.status in (Pedido.Status.PAGO, Pedido.Status.EM_REVISAO):
+                return
+
+            # (1) Anti-fraude: valor aprovado diferente do total → em revisão.
+            if valor_pago is not None and not self._valor_confere(valor_pago, pedido.total):
+                self._marcar_em_revisao(
+                    pedido, Pedido.MotivoRevisao.DIVERGENCIA_VALOR, evento_id
+                )
+                logger.warning(
+                    "Webhook MP: valor aprovado diverge do total do pedido %s — em revisão.",
+                    pedido.codigo,
+                )
+                return
+
+            # (2) Pago após a expiração da reserva → em revisão (precisa estorno).
+            if pedido.status == Pedido.Status.EXPIRADO or pedido.expira_em <= timezone.now():
+                self._marcar_em_revisao(
+                    pedido, Pedido.MotivoRevisao.PAGO_APOS_EXPIRACAO, evento_id
+                )
+                logger.warning(
+                    "Webhook MP: pagamento após a expiração do pedido %s — em revisão.",
+                    pedido.codigo,
+                )
                 return
 
             itens = list(pedido.itens.select_related("variacao").all())
@@ -478,15 +536,19 @@ class WebhookMercadoPagoView(APIView):
                 for v in Variacao.objects.select_for_update().filter(id__in=variacao_ids)
             }
 
-            # Revalida estoque bruto (o decremento nunca pode ser negativo).
+            # (3) Sem estoque na confirmação (corrida) → em revisão (precisa estorno).
+            # O estoque continua seguro (nunca baixa sem lastro / nunca fica negativo).
             suficiente = all(
                 travadas[i.variacao_id].estoque >= i.quantidade for i in itens
             )
             if not suficiente:
-                # Caso raro: estoque acabou. Cancela o pedido e registra mp_payment_id.
-                pedido.status = Pedido.Status.CANCELADO
-                pedido.mp_payment_id = evento_id
-                pedido.save(update_fields=["status", "mp_payment_id"])
+                self._marcar_em_revisao(
+                    pedido, Pedido.MotivoRevisao.SEM_ESTOQUE_APOS_PAGO, evento_id
+                )
+                logger.warning(
+                    "Webhook MP: sem estoque na confirmação do pedido %s — em revisão.",
+                    pedido.codigo,
+                )
                 return
 
             for item in itens:
@@ -612,6 +674,30 @@ class PedidoViewSet(viewsets.ReadOnlyModelViewSet):
     # Financeiro: Dono, ou Funcionário com acesso_financeiro liberado.
     permission_classes = [PodeFinanceiro]
     filterset_fields = ["status"]
+
+    @action(detail=True, methods=["patch"], url_path="rastreio")
+    def rastreio(self, request, pk=None):
+        """Grava/edita o código de rastreio dos Correios (só em pedido PAGO).
+
+        Demais campos do pedido seguem somente leitura — aqui só mexe no
+        ``codigo_rastreio`` e NÃO altera o status. Gate financeiro (do viewset).
+        """
+        pedido = self.get_object()
+        if pedido.status != Pedido.Status.PAGO:
+            return Response(
+                {"codigo_rastreio": ["Só é possível adicionar rastreio a um pedido pago."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        codigo = (request.data.get("codigo_rastreio") or "").strip()
+        if len(codigo) > 60:
+            return Response(
+                {"codigo_rastreio": ["Código de rastreio muito longo (máx. 60 caracteres)."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        # Permite limpar (string vazia) ou definir um novo código.
+        pedido.codigo_rastreio = codigo
+        pedido.save(update_fields=["codigo_rastreio"])
+        return Response(PedidoSerializer(pedido).data)
 
 
 # --------------------------------------------------------------------------
@@ -915,6 +1001,144 @@ class PromocaoViewSet(viewsets.ModelViewSet):
     serializer_class = PromocaoSerializer
     permission_classes = [PodeFinanceiro]
     filterset_fields = ["tipo_aplicacao", "ativo", "escopo"]
+
+
+# --------------------------------------------------------------------------
+# Relatórios financeiros (gate PodeFinanceiro) — agregações no servidor.
+# Cada endpoint devolve JSON por padrão; com ?formato=csv|pdf baixa o arquivo.
+# --------------------------------------------------------------------------
+
+
+class _RelatorioView(APIView):
+    """Base dos relatórios: gate financeiro + dispatch JSON × exportação.
+
+    A subclasse implementa ``montar(request) -> (dados, exportacao)`` onde
+    ``exportacao`` é um dict com ``nome``/``titulo``/``subtitulo``/``cabecalhos``/
+    ``linhas`` para CSV/PDF. Erros de parâmetro (data/mês inválido) viram 400.
+    """
+
+    permission_classes = [PodeFinanceiro]
+
+    def get(self, request, *args, **kwargs):
+        try:
+            dados, exportacao = self.montar(request)
+        except ValueError as exc:
+            return Response({"detalhe": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        formato = (request.query_params.get("formato") or "").lower()
+        if formato in ("csv", "pdf"):
+            try:
+                return relatorios.exportar(
+                    formato,
+                    exportacao["nome"],
+                    exportacao["titulo"],
+                    exportacao["subtitulo"],
+                    exportacao["cabecalhos"],
+                    exportacao["linhas"],
+                )
+            except Exception:
+                logger.warning("Falha ao gerar arquivo de relatório (%s).", formato)
+                return Response(
+                    {"detalhe": "Não foi possível gerar o arquivo agora. Tente novamente."},
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
+        return Response(dados)
+
+
+class RelatorioVendasPeriodoView(_RelatorioView):
+    """Faturamento e nº de pedidos pagos por dia/semana/mês (filtro de datas)."""
+
+    def montar(self, request):
+        dados = relatorios.vendas_por_periodo(
+            de=request.query_params.get("de"),
+            ate=request.query_params.get("ate"),
+            granularidade=request.query_params.get("granularidade", "dia"),
+        )
+        cabecalhos = ["Período", "Faturamento (R$)", "Pedidos pagos"]
+        linhas = [
+            [s["periodo"], relatorios.moeda_br(s["faturamento"]), s["pedidos"]]
+            for s in dados["series"]
+        ]
+        linhas.append(
+            [
+                "Total",
+                relatorios.moeda_br(dados["totais"]["faturamento"]),
+                dados["totais"]["pedidos"],
+            ]
+        )
+        exportacao = {
+            "nome": f"vendas-por-periodo-{dados['de']}-a-{dados['ate']}",
+            "titulo": "Vendas por período",
+            "subtitulo": (
+                f"De {relatorios.data_br(dados['de'])} a "
+                f"{relatorios.data_br(dados['ate'])} · por {dados['granularidade']}"
+            ),
+            "cabecalhos": cabecalhos,
+            "linhas": linhas,
+        }
+        return dados, exportacao
+
+
+class RelatorioProdutosVendidosView(_RelatorioView):
+    """Ranking de variações por quantidade e receita (top N, filtro de datas)."""
+
+    def montar(self, request):
+        dados = relatorios.produtos_mais_vendidos(
+            de=request.query_params.get("de"),
+            ate=request.query_params.get("ate"),
+            top=request.query_params.get("top", 20),
+        )
+        cabecalhos = ["Peça", "Variação", "Quantidade", "Receita (R$)"]
+        linhas = [
+            [
+                i["peca_nome"],
+                i["variacao_descricao"],
+                i["quantidade"],
+                relatorios.moeda_br(i["receita"]),
+            ]
+            for i in dados["itens"]
+        ]
+        exportacao = {
+            "nome": f"produtos-mais-vendidos-{dados['de']}-a-{dados['ate']}",
+            "titulo": "Produtos mais vendidos",
+            "subtitulo": (
+                f"De {relatorios.data_br(dados['de'])} a "
+                f"{relatorios.data_br(dados['ate'])} · top {dados['top']}"
+            ),
+            "cabecalhos": cabecalhos,
+            "linhas": linhas,
+        }
+        return dados, exportacao
+
+
+class RelatorioResumoMesView(_RelatorioView):
+    """Resumo do mês: faturamento, vendas, ticket médio, desconto e cupons."""
+
+    def montar(self, request):
+        dados = relatorios.resumo_do_mes(mes=request.query_params.get("mes"))
+        cabecalhos = ["Indicador", "Valor"]
+        linhas = [
+            ["Faturamento (R$)", relatorios.moeda_br(dados["faturamento"])],
+            ["Vendas pagas", dados["num_vendas"]],
+            ["Ticket médio (R$)", relatorios.moeda_br(dados["ticket_medio"])],
+            ["Desconto concedido (R$)", relatorios.moeda_br(dados["desconto_concedido"])],
+        ]
+        if dados["cupons"]:
+            linhas.append(["", ""])
+            linhas.append(["Cupom", "Usos / Valor descontado (R$)"])
+            for c in dados["cupons"]:
+                rotulo = f"{c['nome']} ({c['codigo']})" if c["codigo"] else c["nome"]
+                linhas.append(
+                    [rotulo, f"{c['usos']} / {relatorios.moeda_br(c['valor_descontado'])}"]
+                )
+        exportacao = {
+            "nome": f"resumo-do-mes-{dados['mes']}",
+            "titulo": "Resumo do mês",
+            "subtitulo": f"Mês de referência: {dados['mes_rotulo']}",
+            "cabecalhos": cabecalhos,
+            "linhas": linhas,
+        }
+        return dados, exportacao
 
 
 class CupomValidarView(APIView):

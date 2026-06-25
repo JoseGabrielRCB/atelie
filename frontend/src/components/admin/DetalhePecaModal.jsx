@@ -39,7 +39,7 @@ export default function DetalhePecaModal({ pecaId }) {
         </div>
       </div>
 
-      <p className="font-display text-xl font-semibold text-texto">
+      <p className="font-sans text-xl font-semibold text-texto">
         <Preco valor={p.preco} />
       </p>
 

@@ -1,6 +1,6 @@
 """Modelos do catálogo do ateliê: Categoria, Cor, Peca, Variacao, Imagem, Encomenda."""
 
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.conf import settings
 from django.core.validators import MinValueValidator, RegexValidator
@@ -361,6 +361,14 @@ class Pedido(models.Model):
         PAGO = "pago", "Pago"
         EXPIRADO = "expirado", "Expirado"
         CANCELADO = "cancelado", "Cancelado"
+        # Pago no MP, mas NÃO atendido (precisa de ação do dono: estorno/análise).
+        # Não baixa estoque. O motivo fica em `motivo_revisao`.
+        EM_REVISAO = "em_revisao", "Em revisão"
+
+    class MotivoRevisao(models.TextChoices):
+        DIVERGENCIA_VALOR = "divergencia_valor", "Valor pago diferente do total"
+        PAGO_APOS_EXPIRACAO = "pago_apos_expiracao", "Pago após a expiração"
+        SEM_ESTOQUE_APOS_PAGO = "sem_estoque_apos_pago", "Sem estoque na confirmação"
 
     # Conta do cliente que fez a compra (null nos pedidos históricos, anteriores
     # ao login obrigatório). PROTECT preserva o histórico financeiro.
@@ -381,6 +389,13 @@ class Pedido(models.Model):
         choices=Status.choices,
         default=Status.AGUARDANDO_PAGAMENTO,
     )
+    # Preenchido quando status == em_revisao (por que o pedido não foi atendido).
+    motivo_revisao = models.CharField(
+        "motivo da revisão",
+        max_length=30,
+        choices=MotivoRevisao.choices,
+        blank=True,
+    )
     total = models.DecimalField("total", max_digits=10, decimal_places=2)
     # Cupom aplicado (se houve) + desconto total já embutido em `total`.
     cupom = models.ForeignKey(
@@ -394,6 +409,9 @@ class Pedido(models.Model):
     desconto = models.DecimalField("desconto", max_digits=10, decimal_places=2, default=Decimal("0.00"))
     mp_preference_id = models.CharField("ID da preferência (MP)", max_length=100, blank=True)
     mp_payment_id = models.CharField("ID do pagamento (MP)", max_length=100, blank=True)
+    # Código de rastreio dos Correios, preenchido pelo admin após o envio (só em
+    # pedido pago). Não muda o status — é apenas informativo para o cliente.
+    codigo_rastreio = models.CharField("código de rastreio", max_length=60, blank=True)
     criado_em = models.DateTimeField("criado em", auto_now_add=True)
     expira_em = models.DateTimeField("expira em")
 
@@ -594,7 +612,8 @@ class Promocao(models.Model):
             bruto = preco * self.valor / Decimal(100)
         else:
             bruto = self.valor
-        bruto = bruto.quantize(Decimal("0.01"))
+        # Dinheiro arredonda para centavos com ROUND_HALF_UP (não o HALF_EVEN padrão).
+        bruto = bruto.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         if bruto < 0:
             return Decimal("0.00")
         return min(bruto, preco)

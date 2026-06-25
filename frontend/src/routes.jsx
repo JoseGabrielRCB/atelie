@@ -34,6 +34,7 @@ import Destaques from "./pages/admin/Destaques.jsx";
 import Encomendas from "./pages/admin/Encomendas.jsx";
 import Vendas from "./pages/admin/Vendas.jsx";
 import Promocoes from "./pages/admin/Promocoes.jsx";
+import Relatorios from "./pages/admin/Relatorios.jsx";
 import Funcionarios from "./pages/admin/Funcionarios.jsx";
 import Whatsapp from "./pages/admin/Whatsapp.jsx";
 
@@ -118,6 +119,14 @@ export default function AppRoutes() {
           element={
             <ExigeFinanceiro>
               <Promocoes />
+            </ExigeFinanceiro>
+          }
+        />
+        <Route
+          path="relatorios"
+          element={
+            <ExigeFinanceiro>
+              <Relatorios />
             </ExigeFinanceiro>
           }
         />

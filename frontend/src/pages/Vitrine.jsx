@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { usePecasPaginadas } from "../hooks/usePecas";
 import Filtro from "../components/Filtro";
@@ -12,12 +12,43 @@ import { getMeta } from "../seo/meta";
 // Tamanho de página do backend (PageNumberPagination, PAGE_SIZE=20).
 const PECAS_POR_PAGINA = 20;
 
+// Estado da vitrine guardado por sessão (some ao fechar a aba): busca, categoria,
+// página e rolagem. Serve para retomar a vitrine no mesmo ponto ao voltar de uma
+// peça — sem precisar rolar tudo de novo.
+const CHAVE_ESTADO = "vitrine:estado";
+
+function lerEstadoSalvo() {
+  if (typeof window === "undefined") return {};
+  try {
+    return JSON.parse(window.sessionStorage.getItem(CHAVE_ESTADO)) || {};
+  } catch {
+    return {};
+  }
+}
+
+function salvarEstado(parcial) {
+  if (typeof window === "undefined") return;
+  try {
+    const atual = lerEstadoSalvo();
+    window.sessionStorage.setItem(
+      CHAVE_ESTADO,
+      JSON.stringify({ ...atual, ...parcial })
+    );
+  } catch {
+    /* sessionStorage indisponível (modo privado/cota): ignora. */
+  }
+}
+
 export default function Vitrine() {
   useSeo(getMeta("/vitrine"));
-  const [busca, setBusca] = useState("");
-  const [buscaDebounced, setBuscaDebounced] = useState("");
-  const [categoria, setCategoria] = useState("");
-  const [pagina, setPagina] = useState(1);
+
+  // Lê o estado salvo uma única vez por montagem (volta da peça → retoma aqui).
+  const salvo = useMemo(() => lerEstadoSalvo(), []);
+
+  const [busca, setBusca] = useState(salvo.busca || "");
+  const [buscaDebounced, setBuscaDebounced] = useState(salvo.busca || "");
+  const [categoria, setCategoria] = useState(salvo.categoria || "");
+  const [pagina, setPagina] = useState(salvo.pagina || 1);
 
   // Espera o usuário parar de digitar antes de consultar a API.
   useEffect(() => {
@@ -25,10 +56,39 @@ export default function Vitrine() {
     return () => clearTimeout(t);
   }, [busca]);
 
-  // Volta à página 1 quando busca/categoria mudam (a paginação reflete o filtro).
+  // Volta à página 1 quando busca/categoria mudam: feito nos handlers do Filtro
+  // (abaixo), não num efeito — assim a página restaurada não é zerada ao montar.
+
+  // Persiste busca/categoria/página a cada mudança (para retomar ao voltar).
   useEffect(() => {
+    salvarEstado({ busca, categoria, pagina });
+  }, [busca, categoria, pagina]);
+
+  // Salva a posição de rolagem enquanto o usuário rola (1 gravação por frame).
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    let agendado = false;
+    function aoRolar() {
+      if (agendado) return;
+      agendado = true;
+      window.requestAnimationFrame(() => {
+        salvarEstado({ scrollY: window.scrollY });
+        agendado = false;
+      });
+    }
+    window.addEventListener("scroll", aoRolar, { passive: true });
+    return () => window.removeEventListener("scroll", aoRolar);
+  }, []);
+
+  // Muda o filtro e volta para a página 1 (a paginação reflete o filtro novo).
+  function aoMudarBusca(valor) {
+    setBusca(valor);
     setPagina(1);
-  }, [buscaDebounced, categoria]);
+  }
+  function aoMudarCategoria(valor) {
+    setCategoria(valor);
+    setPagina(1);
+  }
 
   const {
     data,
@@ -48,6 +108,16 @@ export default function Vitrine() {
   const pecas = data?.itens ?? [];
   const total = data?.total ?? 0;
   const totalPaginas = Math.max(1, Math.ceil(total / PECAS_POR_PAGINA));
+
+  // Restaura a rolagem salva assim que os dados da página estão prontos (uma vez).
+  const rolagemRestaurada = useRef(false);
+  useEffect(() => {
+    if (rolagemRestaurada.current || isLoading) return;
+    rolagemRestaurada.current = true;
+    if (salvo.scrollY && typeof window !== "undefined") {
+      window.scrollTo(0, salvo.scrollY);
+    }
+  }, [isLoading, salvo]);
 
   function irParaPagina(p) {
     setPagina(p);
@@ -70,9 +140,9 @@ export default function Vitrine() {
 
       <Filtro
         busca={busca}
-        onBusca={setBusca}
+        onBusca={aoMudarBusca}
         categoria={categoria}
-        onCategoria={setCategoria}
+        onCategoria={aoMudarCategoria}
       />
 
       {/* Altura mínima reservada para evitar salto de layout ao filtrar. */}

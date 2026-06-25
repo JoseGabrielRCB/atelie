@@ -258,9 +258,11 @@ def test_concorrencia_ultimo_item(api, monkeypatch, peca_ativa):
 
     assert variacao.estoque == 0  # nunca negativo
     pagos = [p for p in (pedido_a, pedido_b) if p.status == Pedido.Status.PAGO]
-    cancelados = [p for p in (pedido_a, pedido_b) if p.status == Pedido.Status.CANCELADO]
+    # O 2º pagamento (sem estoque) vai para "em revisão" (precisa estorno no MP).
+    em_revisao = [p for p in (pedido_a, pedido_b) if p.status == Pedido.Status.EM_REVISAO]
     assert len(pagos) == 1
-    assert len(cancelados) == 1
+    assert len(em_revisao) == 1
+    assert em_revisao[0].motivo_revisao == Pedido.MotivoRevisao.SEM_ESTOQUE_APOS_PAGO
 
 
 # --------------------------------------------------------------------------

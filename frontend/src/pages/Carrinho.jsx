@@ -108,7 +108,7 @@ export default function Carrinho() {
         </span>
         <Preco
           valor={totalPreco}
-          className="font-display text-2xl font-semibold text-texto"
+          className="font-sans text-2xl font-semibold text-texto"
         />
       </div>
 

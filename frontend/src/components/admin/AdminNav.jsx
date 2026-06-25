@@ -31,6 +31,7 @@ function montarGrupos({ ehDono, podeFinanceiro }) {
           ? [
               { para: "/admin/vendas", rotulo: "Vendas" },
               { para: "/admin/promocoes", rotulo: "Promoções" },
+              { para: "/admin/relatorios", rotulo: "Relatórios" },
             ]
           : []),
       ],

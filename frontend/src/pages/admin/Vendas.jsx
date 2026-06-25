@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Eye } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Eye, Truck, AlertTriangle } from "lucide-react";
 import { useAdminPedidos } from "../../hooks/useAdminPedidos";
 import { useOrdenacao, ordenarPor } from "../../hooks/useOrdenacao";
 import { usePaginacao } from "../../hooks/usePaginacao";
@@ -8,18 +8,26 @@ import { CabecalhoOrdenavel, OrdenarMobile } from "../../components/admin/Cabeca
 import { Paginacao } from "../../components/admin/Paginacao";
 import Modal from "../../components/admin/Modal";
 import Preco from "../../components/Preco";
-import { obterPedido } from "../../lib/api";
+import { obterPedido, atualizarRastreio } from "../../lib/api";
 import { Carregando, Erro, Vazio } from "../../components/Estado";
-import { BotaoPrimario, Selo, inputClasse } from "../../components/admin/ui";
+import { BotaoPrimario, BotaoSecundario, Selo, Campo, Feedback, inputClasse } from "../../components/admin/ui";
 
 // Metadados de cada status (rótulo PT-BR + cor do selo).
 const STATUS = {
   pago: { rotulo: "Pago", cor: "verde" },
   aguardando_pagamento: { rotulo: "Aguardando pagamento", cor: "acento" },
+  em_revisao: { rotulo: "Em revisão", cor: "vermelho" },
   expirado: { rotulo: "Expirado", cor: "cinza" },
   cancelado: { rotulo: "Cancelado", cor: "vermelho" },
 };
-const ORDEM_STATUS = ["aguardando_pagamento", "pago", "expirado", "cancelado"];
+const ORDEM_STATUS = ["aguardando_pagamento", "pago", "em_revisao", "expirado", "cancelado"];
+
+// Por que um pedido pago caiu "em revisão" (precisa de ação do dono).
+const MOTIVO_REVISAO = {
+  divergencia_valor: "Valor pago diferente do total",
+  pago_apos_expiracao: "Pago após a expiração da reserva",
+  sem_estoque_apos_pago: "Sem estoque na hora da confirmação",
+};
 
 function dataCurta(iso) {
   if (!iso) return "—";
@@ -70,19 +78,25 @@ export default function Vendas() {
   });
 
   const aguardando = todos.filter((p) => p.status === "aguardando_pagamento").length;
+  const emRevisao = todos.filter((p) => p.status === "em_revisao").length;
 
   return (
     <section>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="font-display text-3xl font-semibold">Vendas</h1>
-        {aguardando > 0 && (
-          <Selo cor="acento">{aguardando} aguardando pagamento</Selo>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {emRevisao > 0 && (
+            <Selo cor="vermelho">{emRevisao} em revisão</Selo>
+          )}
+          {aguardando > 0 && (
+            <Selo cor="acento">{aguardando} aguardando pagamento</Selo>
+          )}
+        </div>
       </div>
 
       <p className="mb-4 text-sm text-texto-suave">
         Pedidos do pagamento online (Mercado Pago). Esta tela é{" "}
-        <strong className="font-medium text-texto">somente leitura</strong> —
+        <strong className="font-medium text-texto">somente leitura, exceto o código de rastreio</strong> —
         estornos e cancelamentos são feitos no painel do Mercado Pago.
       </p>
 
@@ -170,9 +184,19 @@ export default function Vendas() {
                       <Preco valor={p.total} />
                     </td>
                     <td className="px-4 py-3" data-rotulo="Status">
-                      <Selo cor={STATUS[p.status]?.cor ?? "neutro"}>
-                        {rotuloStatus(p.status)}
-                      </Selo>
+                      <span className="inline-flex items-center gap-1.5">
+                        <Selo cor={STATUS[p.status]?.cor ?? "neutro"}>
+                          {rotuloStatus(p.status)}
+                        </Selo>
+                        {p.codigo_rastreio && (
+                          <Truck
+                            size={15}
+                            aria-label={`Rastreio: ${p.codigo_rastreio}`}
+                            title={`Rastreio: ${p.codigo_rastreio}`}
+                            className="text-acento-escuro"
+                          />
+                        )}
+                      </span>
                     </td>
                     <td className="px-4 py-3 text-texto-suave" data-rotulo="Data">{dataCurta(p.criado_em)}</td>
                     <td className="cel-acoes px-4 py-3">
@@ -249,9 +273,27 @@ function DetalheVenda({ id, aoFechar }) {
           }
         />
         <Linha rotulo="Total" valor={<Preco valor={p.total} className="font-medium text-texto" />} />
+        {p.status === "em_revisao" && (
+          <Linha rotulo="Motivo da revisão" valor={MOTIVO_REVISAO[p.motivo_revisao] ?? "—"} />
+        )}
         <Linha rotulo="Criado em" valor={dataCurta(p.criado_em)} />
         <Linha rotulo="Expira em" valor={dataCurta(p.expira_em)} />
       </dl>
+
+      {p.status === "em_revisao" && (
+        <div className="flex gap-2 rounded-lg border border-erro/40 bg-erro/5 px-4 py-3 text-sm text-texto">
+          <AlertTriangle size={18} aria-hidden="true" className="mt-0.5 shrink-0 text-erro" />
+          <div>
+            <p className="font-medium text-erro">Pago no Mercado Pago, mas não atendido.</p>
+            <p className="mt-1 text-texto-suave">
+              {MOTIVO_REVISAO[p.motivo_revisao] ?? "Precisa de análise"}. O estoque{" "}
+              <strong className="font-medium text-texto">não</strong> foi baixado. Analise e, se
+              for o caso, faça o <strong className="font-medium text-texto">estorno no painel do
+              Mercado Pago</strong> (não dá para estornar por aqui).
+            </p>
+          </div>
+        </div>
+      )}
 
       <div>
         <p className="mb-2 text-sm font-medium text-texto-suave">
@@ -287,6 +329,17 @@ function DetalheVenda({ id, aoFechar }) {
         )}
       </div>
 
+      {p.status === "pago" ? (
+        <RastreioEditor pedido={p} />
+      ) : (
+        <div className="border-t border-borda pt-4">
+          <p className="text-sm font-medium text-texto-suave">Código de rastreio (Correios)</p>
+          <p className="mt-1 text-sm text-texto-suave">
+            Disponível só para pedidos <strong className="font-medium text-texto">pagos</strong>.
+          </p>
+        </div>
+      )}
+
       <div className="border-t border-borda pt-4">
         <p className="mb-2 text-sm font-medium text-texto-suave">Mercado Pago</p>
         <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
@@ -296,9 +349,9 @@ function DetalheVenda({ id, aoFechar }) {
       </div>
 
       <p className="rounded-lg border border-borda bg-fundo px-4 py-3 text-sm text-texto-suave">
-        Esta tela é <strong className="font-medium text-texto">somente leitura</strong>.
-        Estornos e cancelamentos são feitos diretamente no painel do Mercado
-        Pago, não aqui.
+        Esta tela é <strong className="font-medium text-texto">somente leitura, exceto o
+        código de rastreio</strong>. Estornos e cancelamentos são feitos diretamente no
+        painel do Mercado Pago, não aqui.
       </p>
 
       <div className="flex justify-end border-t border-borda pt-4">
@@ -315,6 +368,59 @@ function Linha({ rotulo, valor, mono = false }) {
     <div>
       <dt className="text-sm font-medium text-texto-suave">{rotulo}</dt>
       <dd className={"text-texto" + (mono ? " break-all font-mono text-sm" : "")}>{valor}</dd>
+    </div>
+  );
+}
+
+// Campo editável do código de rastreio dos Correios — só para pedido pago. Salva
+// via PATCH e atualiza o detalhe + a lista de Vendas. Deixar vazio remove o código.
+function RastreioEditor({ pedido }) {
+  const queryClient = useQueryClient();
+  const [codigo, setCodigo] = useState(pedido.codigo_rastreio || "");
+  const [ok, setOk] = useState(false);
+
+  const mut = useMutation({
+    mutationFn: (valor) => atualizarRastreio(pedido.id, valor),
+    onSuccess: () => {
+      setOk(true);
+      queryClient.invalidateQueries({ queryKey: ["admin", "pedido", String(pedido.id)] });
+      queryClient.invalidateQueries({ queryKey: ["admin", "pedidos"] });
+      setTimeout(() => setOk(false), 2500);
+    },
+  });
+
+  const semMudanca = codigo.trim() === (pedido.codigo_rastreio || "");
+
+  return (
+    <div className="border-t border-borda pt-4">
+      <Campo label="Código de rastreio (Correios)" htmlFor="rastreio" dica="Aparece em “Meus pedidos” do cliente quando preenchido. Deixe vazio para remover.">
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <input
+            id="rastreio"
+            type="text"
+            value={codigo}
+            onChange={(e) => {
+              setCodigo(e.target.value);
+              setOk(false);
+            }}
+            maxLength={60}
+            placeholder="Ex.: AA123456785BR"
+            className={inputClasse + " sm:flex-1"}
+          />
+          <BotaoSecundario
+            type="button"
+            onClick={() => mut.mutate(codigo.trim())}
+            disabled={mut.isPending || semMudanca}
+          >
+            <Truck size={16} aria-hidden="true" />
+            {mut.isPending ? "Salvando…" : "Salvar rastreio"}
+          </BotaoSecundario>
+        </div>
+      </Campo>
+      <div className="mt-1">
+        {mut.isError && <Feedback tipo="erro">{mut.error.message}</Feedback>}
+        {ok && <Feedback tipo="sucesso">Código de rastreio salvo.</Feedback>}
+      </div>
     </div>
   );
 }

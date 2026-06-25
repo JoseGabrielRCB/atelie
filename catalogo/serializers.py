@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
-from rest_framework.validators import UniqueValidator
+from rest_framework.validators import UniqueTogetherValidator, UniqueValidator
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from .models import (
@@ -130,6 +130,15 @@ class VariacaoSerializer(serializers.ModelSerializer):
             "estoque",
             "esgotado",
             "disponivel",
+        ]
+        # Mensagem PT-BR amigável para a duplicata (peça, tamanho, cor) — no lugar
+        # do texto técnico padrão do DRF ("...devem criar um set único").
+        validators = [
+            UniqueTogetherValidator(
+                queryset=Variacao.objects.all(),
+                fields=["peca", "tamanho", "cor"],
+                message="Já existe uma variação com esse tamanho e cor para esta peça.",
+            )
         ]
 
     def get_disponivel(self, obj):
@@ -394,9 +403,11 @@ class PedidoSerializer(serializers.ModelSerializer):
             "nome",
             "contato",
             "status",
+            "motivo_revisao",
             "total",
             "mp_preference_id",
             "mp_payment_id",
+            "codigo_rastreio",
             "criado_em",
             "expira_em",
             "itens",
