@@ -1,8 +1,17 @@
-# Ateliê — Aplicação (Backend + Frontend)
+# Ateliê da Sete — Aplicação (Backend + Frontend)
 
-Catálogo de um ateliê de roupas. **Backend** Django/DRF (API REST): vitrine pública
-(somente leitura) e admin via JWT. **Frontend** React/Vite em [`frontend/`](./frontend/):
-área do cliente onde o pedido é finalizado pelo **WhatsApp** — fora do sistema.
+Catálogo e loja de um ateliê de roupas. **Backend** Django/DRF (API REST); **Frontend**
+React/Vite em [`frontend/`](./frontend/). O negócio tem dois fluxos:
+
+- **Peças prontas** — o cliente cria uma **conta** (login por e-mail), monta o carrinho e
+  **paga online** pelo Mercado Pago (Checkout Pro). O servidor é a fonte da verdade de preço,
+  estoque e **promoções/cupons**.
+- **Sob medida (encomenda)** — o cliente envia uma solicitação com fotos de referência; o
+  acerto final é combinado por **WhatsApp**, fora do sistema.
+
+O **admin** (Dono e Funcionários, com papéis e permissões) entra via **JWT** e gerencia
+catálogo, estoque, encomendas, vendas e promoções. Há ainda um **bot de WhatsApp privado do
+dono** (alertas de estoque e comandos rápidos).
 
 Documentação técnica: [`CLAUDE.md`](./CLAUDE.md) (backend) e
 [`frontend/CLAUDE.md`](./frontend/CLAUDE.md) (frontend).
@@ -101,17 +110,35 @@ python -m pytest
 
 ## Endpoints principais
 
-| Método | Rota                      | Acesso  | Descrição                          |
-|--------|---------------------------|---------|------------------------------------|
-| GET    | `/api/categorias/`        | Público | Lista categorias                   |
-| GET    | `/api/pecas/`             | Público | Peças ativas (filtros e busca)     |
-| GET    | `/api/pecas/{id}/`        | Público | Detalhe da peça                    |
-| POST   | `/api/auth/login/`        | Público | Retorna `access` + `refresh`       |
-| POST   | `/api/auth/refresh/`      | Público | Renova o `access`                  |
-| CRUD   | `/api/pecas/` etc.        | Admin   | Requer `Authorization: Bearer ...` |
+Listas são **paginadas** (`PAGE_SIZE=20`): `{ count, next, previous, results }`.
 
-Filtros da vitrine: `?categoria=<id>`, `?tipo=pronta|sob_medida`, `?search=<texto>`,
-`?ordering=preco|-criado_em|nome`.
+| Método | Rota                         | Acesso        | Descrição                                   |
+|--------|------------------------------|---------------|---------------------------------------------|
+| GET    | `/api/categorias/`           | Público       | Lista categorias                            |
+| GET    | `/api/cores/`                | Público       | Paleta de cores reutilizável                |
+| GET    | `/api/pecas/`                | Público       | Peças ativas (filtros, busca, promo)        |
+| GET    | `/api/pecas/{id}/`           | Público       | Detalhe da peça                             |
+| POST   | `/api/encomendas/`           | Público       | Cria encomenda sob medida (com imagens)     |
+| POST   | `/api/conta/cadastro/`       | Público       | Cria conta de cliente                       |
+| POST   | `/api/conta/login/`          | Público       | Login do cliente (e-mail + senha) → JWT     |
+| GET/PATCH | `/api/conta/me/`          | Cliente       | Ver/editar perfil (nome/telefone)           |
+| GET    | `/api/conta/pedidos/`        | Cliente       | Histórico dos próprios pedidos              |
+| POST   | `/api/cupom/validar/`        | Público       | Pré-valida um cupom no carrinho             |
+| POST   | `/api/checkout/`             | Cliente       | Cria pedido + preferência de pagamento (MP) |
+| POST   | `/api/webhooks/mercadopago/` | Público (MP)  | Confirma pagamento (HMAC, idempotente)      |
+| POST   | `/api/auth/login/`           | Público       | Login do admin → `access` + `refresh`       |
+| POST   | `/api/auth/refresh/`         | Público       | Renova o `access`                           |
+| CRUD   | `/api/pecas/`, `/api/cores/` etc. | Admin    | Catálogo/estoque — `Authorization: Bearer`  |
+| GET/PATCH | `/api/encomendas/`        | Equipe        | Lista/atualiza status das encomendas        |
+| GET    | `/api/pedidos/`              | Financeiro    | Vendas (Dono ou `acesso_financeiro`)        |
+| CRUD   | `/api/promocoes/`            | Financeiro    | Promoções e cupons                          |
+| CRUD   | `/api/usuarios/`             | Só Dono       | Gerencia contas de funcionários             |
+
+Filtros da vitrine: `?categoria=<id>`, `?tipo=pronta|sob_medida`, `?destaque=true`,
+`?search=<texto>`, `?ordering=preco|-criado_em|nome`.
+
+> O fluxo completo da API (modelos, regras de negócio, permissões por papel e contratos de
+> cada endpoint) está documentado em [`CLAUDE.md`](./CLAUDE.md).
 
 ### Exemplo de autenticação
 
@@ -125,6 +152,36 @@ curl -X POST http://127.0.0.1:8000/api/auth/login/ \
 curl http://127.0.0.1:8000/api/pecas/ \
   -H "Authorization: Bearer <access-token>"
 ```
+
+---
+
+## Pagamento online (Mercado Pago)
+
+As **peças prontas** são pagas pelo **Mercado Pago (Checkout Pro)**: o cliente paga na
+página hospedada do MP — **nenhum dado de cartão passa pelo nosso backend** (PCI). O preço,
+o total e os descontos são **sempre recalculados no servidor**; o estoque só é decrementado
+**após o pagamento aprovado** (via webhook, com lock e idempotência).
+
+Configure no `.env` (veja `.env.example`):
+
+| Variável            | Para que serve                                                        |
+|---------------------|-----------------------------------------------------------------------|
+| `MP_ACCESS_TOKEN`   | Token do servidor (Mercado Pago). **Segredo** — nunca commitar/logar. |
+| `MP_WEBHOOK_SECRET` | Assinatura HMAC do webhook (valida as notificações do MP).            |
+| `MP_PUBLIC_URL`     | Base HTTPS pública do backend (`notification_url`). Em dev, use um túnel (ex.: ngrok). |
+| `FRONTEND_URL`      | Base do frontend, usada nas `back_urls` de retorno do pagamento.      |
+
+Defaults dev-safe (token/segredo vazios → o checkout fica desligado até configurar).
+
+**Pedidos expiram** em 30 min se não forem pagos. Rode periodicamente o comando que libera a
+disponibilidade reservada:
+
+```bash
+docker compose exec backend python manage.py expirar_pedidos   # ex.: a cada 5 min via cron
+```
+
+> Promoções e **cupons** são geridos no admin (seção financeiro) e aplicados no servidor.
+> Os `usos` de um cupom só incrementam quando o pedido é efetivamente **pago**.
 
 ---
 
