@@ -4,6 +4,7 @@ import { useMutation } from "@tanstack/react-query";
 import { Minus, Plus } from "lucide-react";
 import { criarEncomenda } from "../lib/api";
 import { linkWhatsappEncomenda, whatsappConfigurado } from "../lib/whatsapp";
+import { mascararTelefone as formatarTelefone, soDigitosTelefone as digitos } from "../lib/telefone";
 import { useSeo } from "../seo/useSeo";
 import { getMeta } from "../seo/meta";
 
@@ -49,23 +50,6 @@ function capitalizarPalavras(texto) {
     .toLocaleLowerCase("pt-BR")
     .replace(/(^|\s|['’-])([\p{L}])/gu, (_, sep, letra) => sep + letra.toLocaleUpperCase("pt-BR"));
 }
-
-// Máscara de telefone BR: "(67) 99999-9999" (celular 11 díg.) ou
-// "(67) 9999-9999" (fixo 10 díg.). Trava no comprimento certo.
-function formatarTelefone(valor) {
-  const d = valor.replace(/\D/g, "").slice(0, 11);
-  if (d.length === 0) return "";
-  if (d.length <= 2) return `(${d}`;
-  const ddd = d.slice(0, 2);
-  const resto = d.slice(2);
-  if (resto.length <= 4) return `(${ddd}) ${resto}`;
-  // 10 dígitos → 4+4; 11 dígitos → 5+4.
-  const corte = resto.length <= 8 ? 4 : 5;
-  return `(${ddd}) ${resto.slice(0, corte)}-${resto.slice(corte)}`;
-}
-
-// Conta só os dígitos (para validar comprimento do telefone).
-const digitos = (valor) => valor.replace(/\D/g, "");
 
 // Compõe o texto único `tamanho_medidas` a partir do tamanho + medidas em cm.
 function comporMedidas({ tamanho, tamanhoOutro, medidas }) {

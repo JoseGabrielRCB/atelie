@@ -12,3 +12,15 @@ export function usePecas(filtros = {}) {
     placeholderData: keepPreviousData,
   });
 }
+
+// Variante PAGINADA (server-side) para a vitrine: além dos itens da página,
+// devolve `total` (count do backend) para montar os controles de paginação.
+// Passe `page` nos filtros (a vitrine usa a paginação padrão do backend, 20/pág.).
+export function usePecasPaginadas(filtros = {}) {
+  return useQuery({
+    queryKey: ["pecas", filtros],
+    queryFn: () => listarPecas(filtros),
+    select: (data) => ({ itens: data.results ?? [], total: data.count ?? 0 }),
+    placeholderData: keepPreviousData,
+  });
+}

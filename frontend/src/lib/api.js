@@ -6,32 +6,45 @@
 
 const BASE = import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "";
 
-const CHAVE_ACCESS = "atelie_admin_access";
-const CHAVE_REFRESH = "atelie_admin_refresh";
-
 // Sem localStorage no build SSG (Node): retorna null com segurança.
 const temStorage = typeof localStorage !== "undefined";
 
-// Armazenamento dos tokens (localStorage — app de admin único).
-export const tokens = {
-  get access() {
-    return temStorage ? localStorage.getItem(CHAVE_ACCESS) : null;
-  },
-  get refresh() {
-    return temStorage ? localStorage.getItem(CHAVE_REFRESH) : null;
-  },
-  salvar(access, refresh) {
-    if (access) localStorage.setItem(CHAVE_ACCESS, access);
-    if (refresh) localStorage.setItem(CHAVE_REFRESH, refresh);
-  },
-  salvarAccess(access) {
-    if (access) localStorage.setItem(CHAVE_ACCESS, access);
-  },
-  limpar() {
-    localStorage.removeItem(CHAVE_ACCESS);
-    localStorage.removeItem(CHAVE_REFRESH);
-  },
-};
+// Fábrica de um cofre de tokens (admin e cliente usam chaves SEPARADAS, para
+// não misturar as sessões — um login não vale no contexto do outro).
+function criarCofre(chaveAccess, chaveRefresh) {
+  return {
+    get access() {
+      return temStorage ? localStorage.getItem(chaveAccess) : null;
+    },
+    get refresh() {
+      return temStorage ? localStorage.getItem(chaveRefresh) : null;
+    },
+    salvar(access, refresh) {
+      if (access) localStorage.setItem(chaveAccess, access);
+      if (refresh) localStorage.setItem(chaveRefresh, refresh);
+    },
+    salvarAccess(access) {
+      if (access) localStorage.setItem(chaveAccess, access);
+    },
+    limpar() {
+      localStorage.removeItem(chaveAccess);
+      localStorage.removeItem(chaveRefresh);
+    },
+  };
+}
+
+// Tokens do ADMIN (staff) e do CLIENTE da loja — chaves de storage distintas.
+export const tokens = criarCofre("atelie_admin_access", "atelie_admin_refresh");
+export const tokensCliente = criarCofre("atelie_cliente_access", "atelie_cliente_refresh");
+
+// Resolve o cofre + evento de expiração conforme a audiência da chamada.
+// auth === "cliente" → sessão do cliente; auth truthy (true) → admin.
+function contextoAuth(auth) {
+  if (auth === "cliente") {
+    return { cofre: tokensCliente, evento: "auth:expirou:cliente" };
+  }
+  return { cofre: tokens, evento: "auth:expirou" };
+}
 
 // Rótulos amigáveis (PT-BR) para os campos da API, usados nas mensagens de erro.
 const ROTULOS_CAMPO = {
@@ -48,6 +61,12 @@ const ROTULOS_CAMPO = {
   arquivo: "Imagem",
   contato: "Contato",
   itens: "Itens",
+  email: "E-mail",
+  cpf: "CPF",
+  senha: "Senha",
+  telefone: "Telefone",
+  senha_atual: "Senha atual",
+  nova_senha: "Nova senha",
   disponibilidade: "",
   non_field_errors: "",
 };
@@ -96,8 +115,8 @@ async function corpoJson(resp) {
   }
 }
 
-async function renovarAccess() {
-  const refresh = tokens.refresh;
+async function renovarAccess(cofre) {
+  const refresh = cofre.refresh;
   if (!refresh) return false;
   try {
     const resp = await fetch(`${BASE}/api/auth/refresh/`, {
@@ -107,16 +126,16 @@ async function renovarAccess() {
     });
     if (!resp.ok) return false;
     const dados = await resp.json();
-    tokens.salvarAccess(dados.access);
+    cofre.salvarAccess(dados.access);
     return true;
   } catch {
     return false;
   }
 }
 
-function expirarSessao() {
-  tokens.limpar();
-  window.dispatchEvent(new Event("auth:expirou"));
+function expirarSessao(cofre, evento) {
+  cofre.limpar();
+  window.dispatchEvent(new Event(evento));
 }
 
 async function request(
@@ -124,7 +143,8 @@ async function request(
   { method = "GET", body, auth = false, multipart = false, _retry = false } = {}
 ) {
   const headers = {};
-  if (auth && tokens.access) headers.Authorization = `Bearer ${tokens.access}`;
+  const ctx = auth ? contextoAuth(auth) : null;
+  if (ctx && ctx.cofre.access) headers.Authorization = `Bearer ${ctx.cofre.access}`;
 
   let corpo;
   if (multipart) {
@@ -143,13 +163,13 @@ async function request(
     );
   }
 
-  // Tenta renovar uma vez em caso de access expirado.
-  if (resp.status === 401 && auth && !_retry) {
-    const renovou = await renovarAccess();
+  // Tenta renovar uma vez em caso de access expirado (na sessão correta).
+  if (resp.status === 401 && ctx && !_retry) {
+    const renovou = await renovarAccess(ctx.cofre);
     if (renovou) {
       return request(caminho, { method, body, auth, multipart, _retry: true });
     }
-    expirarSessao();
+    expirarSessao(ctx.cofre, ctx.evento);
     throw new Error("Sessão expirada. Faça login novamente.");
   }
 
@@ -349,11 +369,19 @@ export async function listarTodasEncomendas(filtros = {}) {
 // cliente é ignorado. Sucesso 201: { pedido_id, init_point } — redirecionar o
 // navegador para `init_point`. Erros vêm por campo (nome/contato/itens),
 // 409 { disponibilidade: [...] } (estoque insuficiente) ou 502 { detalhe }.
-export function criarCheckout({ nome, contato, itens }) {
+// Agora exige conta de cliente (auth do cliente). nome/contato/CPF vêm da conta
+// no servidor; o corpo só leva os itens (+ cupom opcional, validado no servidor).
+export function criarCheckout({ itens, cupom }) {
   return request("/checkout/", {
     method: "POST",
-    body: { nome, contato, itens },
+    body: cupom ? { itens, cupom } : { itens },
+    auth: "cliente",
   });
+}
+
+// Pré-valida um cupom contra o carrinho (público) → { valido, desconto, total, mensagem }.
+export function validarCupom(codigo, itens) {
+  return request("/cupom/validar/", { method: "POST", body: { codigo, itens } });
 }
 
 export const obterEncomenda = (id) =>
@@ -442,9 +470,90 @@ export async function listarUsuarios() {
   return todos;
 }
 
+// Promoções/cupons (admin financeiro) — percorre a paginação.
+export async function listarPromocoes() {
+  let url = "/promocoes/";
+  const todas = [];
+  let guarda = 0;
+  while (url && guarda < 100) {
+    const pagina = await request(url, { auth: true });
+    todas.push(...(pagina.results ?? (Array.isArray(pagina) ? pagina : [])));
+    if (!Array.isArray(pagina) && pagina.next) {
+      const u = new URL(pagina.next);
+      url = u.pathname.replace(/^\/api/, "") + u.search;
+    } else {
+      url = null;
+    }
+    guarda += 1;
+  }
+  return todas;
+}
+export const criarPromocao = (dados) =>
+  request("/promocoes/", { method: "POST", body: dados, auth: true });
+export const atualizarPromocao = (id, dados) =>
+  request(`/promocoes/${id}/`, { method: "PATCH", body: dados, auth: true });
+export const excluirPromocao = (id) =>
+  request(`/promocoes/${id}/`, { method: "DELETE", auth: true });
+
 export const criarUsuario = (dados) =>
   request("/usuarios/", { method: "POST", body: dados, auth: true });
 export const atualizarUsuario = (id, dados) =>
   request(`/usuarios/${id}/`, { method: "PATCH", body: dados, auth: true });
 export const excluirUsuario = (id) =>
   request(`/usuarios/${id}/`, { method: "DELETE", auth: true });
+
+// ----------------------------------------------------------------------------
+// Conta do CLIENTE da loja (cadastro/login/perfil/pedidos) — sessão SEPARADA
+// do admin (cofre `tokensCliente`). O backend reforça as permissões.
+// ----------------------------------------------------------------------------
+// Cadastro público: { nome, email, cpf, telefone, senha } → { mensagem }.
+export const contaCadastro = (dados) =>
+  request("/conta/cadastro/", { method: "POST", body: dados });
+
+// Login do cliente (e-mail + senha) → guarda os tokens do cliente.
+export async function contaLogin(email, senha) {
+  let resp;
+  try {
+    resp = await fetch(`${BASE}/api/conta/login/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password: senha }),
+    });
+  } catch {
+    throw new Error("Não foi possível conectar ao servidor.");
+  }
+  if (resp.status === 401) throw new Error("E-mail ou senha inválidos.");
+  if (!resp.ok) throw new Error(mensagemDeErro(resp.status, await corpoJson(resp)));
+  const dados = await resp.json();
+  tokensCliente.salvar(dados.access, dados.refresh);
+  return dados;
+}
+
+export const contaMe = () => request("/conta/me/", { auth: "cliente" });
+export const contaAtualizar = (dados) =>
+  request("/conta/me/", { method: "PATCH", body: dados, auth: "cliente" });
+export const contaTrocarSenha = (senha_atual, nova_senha) =>
+  request("/conta/senha/", {
+    method: "POST",
+    body: { senha_atual, nova_senha },
+    auth: "cliente",
+  });
+
+// Histórico de pedidos do próprio cliente (percorre a paginação).
+export async function contaPedidos() {
+  let url = "/conta/pedidos/";
+  const todos = [];
+  let guarda = 0;
+  while (url && guarda < 100) {
+    const pagina = await request(url, { auth: "cliente" });
+    todos.push(...(pagina.results ?? []));
+    if (pagina.next) {
+      const u = new URL(pagina.next);
+      url = u.pathname.replace(/^\/api/, "") + u.search;
+    } else {
+      url = null;
+    }
+    guarda += 1;
+  }
+  return todos;
+}

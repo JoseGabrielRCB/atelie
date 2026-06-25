@@ -2,23 +2,48 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import { useCarrinho } from "../context/CarrinhoContext";
+import { useConta } from "../context/ContaContext";
 import ItemCarrinho from "../components/ItemCarrinho";
 import Preco from "../components/Preco";
 import { Vazio } from "../components/Estado";
-import { criarCheckout } from "../lib/api";
+import { criarCheckout, validarCupom } from "../lib/api";
+
+const inputClasse =
+  "w-full rounded-lg border border-borda bg-superficie px-4 py-2.5 text-texto placeholder:italic placeholder:text-texto-suave/70 focus:border-acento-escuro focus:outline-none focus:ring-2 focus:ring-acento-escuro/30";
 
 export default function Carrinho() {
   const { itens, totalItens, totalPreco, ajustarQuantidade, remover, limpar } =
     useCarrinho();
-  const [nome, setNome] = useState("");
-  const [contato, setContato] = useState("");
-  // Erros por campo (validação no cliente) + erro geral (resposta do servidor).
-  const [erros, setErros] = useState({});
+  const { logado, cliente } = useConta();
   const [erroGeral, setErroGeral] = useState("");
+  const [cupomInput, setCupomInput] = useState("");
+  const [cupom, setCupom] = useState(null); // { codigo, desconto, total }
+  const [cupomErro, setCupomErro] = useState("");
 
   // Itens que podem ser pagos online (têm variação). Sob medida fica de fora.
   const itensPagaveis = itens.filter((i) => i.variacaoId != null);
   const itensSobMedida = itens.filter((i) => i.variacaoId == null);
+  const itensPayload = itensPagaveis.map((i) => ({
+    variacao_id: i.variacaoId,
+    quantidade: i.quantidade,
+  }));
+
+  const validarMut = useMutation({
+    mutationFn: () => validarCupom(cupomInput.trim(), itensPayload),
+    onSuccess: (dados) => {
+      if (dados?.valido) {
+        setCupom({ codigo: dados.codigo, desconto: dados.desconto, total: dados.total });
+        setCupomErro("");
+      } else {
+        setCupom(null);
+        setCupomErro(dados?.mensagem || "Cupom inválido.");
+      }
+    },
+    onError: (e) => {
+      setCupom(null);
+      setCupomErro(e.message);
+    },
+  });
 
   const checkout = useMutation({
     mutationFn: criarCheckout,
@@ -53,30 +78,10 @@ export default function Carrinho() {
     );
   }
 
-  function validar() {
-    const novos = {};
-    if (!nome.trim()) novos.nome = "Informe seu nome.";
-    if (!contato.trim())
-      novos.contato = "Informe um telefone ou e-mail para contato.";
-    if (itensPagaveis.length === 0)
-      novos.itens =
-        "Nenhum item do pedido pode ser pago online. Peças sob medida vão pela Encomenda.";
-    setErros(novos);
-    return Object.keys(novos).length === 0;
-  }
-
-  function finalizar(e) {
-    e.preventDefault();
+  function finalizar() {
     setErroGeral("");
-    if (!validar()) return;
-    checkout.mutate({
-      nome: nome.trim(),
-      contato: contato.trim(),
-      itens: itensPagaveis.map((i) => ({
-        variacao_id: i.variacaoId,
-        quantidade: i.quantidade,
-      })),
-    });
+    if (itensPagaveis.length === 0) return;
+    checkout.mutate({ itens: itensPayload, cupom: cupom?.codigo });
   }
 
   return (
@@ -121,7 +126,54 @@ export default function Carrinho() {
         </p>
       )}
 
-      <form onSubmit={finalizar} noValidate className="mt-6">
+      {/* Cupom de desconto (pré-validado no servidor; o checkout reconfirma). */}
+      {itensPagaveis.length > 0 && (
+        <div className="mt-4 rounded-lg border border-borda bg-superficie p-4">
+          <label htmlFor="cupom" className="mb-1 block text-sm font-medium text-texto">
+            Cupom de desconto
+          </label>
+          <div className="flex gap-2">
+            <input
+              id="cupom"
+              value={cupomInput}
+              onChange={(e) => setCupomInput(e.target.value.toUpperCase())}
+              placeholder="Ex.: BEMVINDO"
+              className={inputClasse}
+            />
+            <button
+              type="button"
+              onClick={() => cupomInput.trim() && validarMut.mutate()}
+              disabled={validarMut.isPending || !cupomInput.trim()}
+              className="shrink-0 rounded-lg border border-borda px-4 py-2.5 text-sm font-medium text-texto transition hover:border-acento-escuro focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-escuro disabled:opacity-50"
+            >
+              {validarMut.isPending ? "Validando…" : "Aplicar"}
+            </button>
+          </div>
+          {cupomErro && <p className="mt-2 text-sm text-erro">{cupomErro}</p>}
+          {cupom && (
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm">
+              <span className="text-sucesso">
+                Cupom <strong>{cupom.codigo}</strong> aplicado (−
+                <Preco valor={cupom.desconto} />). Total com desconto:{" "}
+                <Preco valor={cupom.total} className="font-semibold text-texto" />
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setCupom(null);
+                  setCupomInput("");
+                  setCupomErro("");
+                }}
+                className="text-texto-suave underline underline-offset-2 hover:text-acento-escuro"
+              >
+                remover
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="mt-6">
         <h2 className="mb-3 font-display text-xl font-semibold text-texto">
           Finalizar compra
         </h2>
@@ -132,74 +184,68 @@ export default function Carrinho() {
           </p>
         )}
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label
-              htmlFor="nome"
-              className="mb-1 block text-sm font-medium text-texto"
-            >
-              Nome
-            </label>
-            <input
-              id="nome"
-              type="text"
-              value={nome}
-              onChange={(e) => setNome(e.target.value)}
-              maxLength={80}
-              autoComplete="name"
-              placeholder="Ex.: Maria Silva"
-              className="w-full rounded-lg border border-borda bg-superficie px-4 py-3 text-texto placeholder:italic placeholder:text-texto-suave/70 focus:border-acento-escuro focus:outline-none focus:ring-2 focus:ring-acento-escuro/30"
-            />
-            {erros.nome && (
-              <p className="mt-1 text-sm text-erro">{erros.nome}</p>
-            )}
+        {itensPagaveis.length === 0 ? (
+          <p className="rounded-lg bg-acento/10 px-4 py-3 text-sm text-texto-suave">
+            Nenhum item do pedido pode ser pago online. Peças sob medida são
+            finalizadas pela{" "}
+            <Link to="/encomenda" className="font-medium text-acento-escuro underline">
+              Encomenda
+            </Link>
+            .
+          </p>
+        ) : !logado ? (
+          // Checkout exige conta — leva ao login/cadastro e volta ao carrinho.
+          <div className="space-y-3 rounded-lg border border-borda bg-superficie p-4">
+            <p className="text-sm text-texto">
+              Para finalizar a compra, entre na sua conta. É rápido — pedimos só
+              os dados necessários para o pagamento.
+            </p>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Link
+                to="/conta/login?next=/carrinho"
+                className="inline-flex flex-1 items-center justify-center rounded-lg bg-acento-escuro px-6 py-3 font-medium text-white transition hover:bg-acento-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-escuro focus-visible:ring-offset-2 focus-visible:ring-offset-fundo"
+              >
+                Entrar
+              </Link>
+              <Link
+                to="/conta/cadastro?next=/carrinho"
+                className="inline-flex flex-1 items-center justify-center rounded-lg border border-borda px-6 py-3 font-medium text-texto transition hover:border-acento-escuro focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-escuro"
+              >
+                Criar conta
+              </Link>
+            </div>
           </div>
-
-          <div>
-            <label
-              htmlFor="contato"
-              className="mb-1 block text-sm font-medium text-texto"
-            >
-              Contato (telefone ou e-mail)
-            </label>
-            <input
-              id="contato"
-              type="text"
-              value={contato}
-              onChange={(e) => setContato(e.target.value)}
-              maxLength={100}
-              autoComplete="tel"
-              placeholder="Ex.: (67) 99999-9999 ou maria@email.com"
-              className="w-full rounded-lg border border-borda bg-superficie px-4 py-3 text-texto placeholder:italic placeholder:text-texto-suave/70 focus:border-acento-escuro focus:outline-none focus:ring-2 focus:ring-acento-escuro/30"
-            />
-            {erros.contato && (
-              <p className="mt-1 text-sm text-erro">{erros.contato}</p>
-            )}
+        ) : (
+          <div className="space-y-4">
+            <div className="rounded-lg border border-borda bg-superficie p-4 text-sm text-texto-suave">
+              Comprando como{" "}
+              <strong className="text-texto">{cliente?.nome}</strong>
+              {cliente?.cpf ? <> · CPF {cliente.cpf}</> : null}.{" "}
+              <Link to="/conta" className="font-medium text-acento-escuro hover:underline">
+                Minha conta
+              </Link>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row-reverse">
+              <button
+                type="button"
+                onClick={finalizar}
+                disabled={checkout.isPending}
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-acento-escuro px-6 py-3 font-medium text-white transition hover:bg-acento-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-escuro focus-visible:ring-offset-2 focus-visible:ring-offset-fundo disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {checkout.isPending ? "Redirecionando…" : "Finalizar compra"}
+              </button>
+              <button
+                type="button"
+                onClick={limpar}
+                disabled={checkout.isPending}
+                className="rounded-lg border border-borda px-6 py-3 text-texto transition hover:bg-superficie disabled:opacity-50"
+              >
+                Limpar pedido
+              </button>
+            </div>
           </div>
-        </div>
-
-        {erros.itens && (
-          <p className="mt-3 text-sm text-erro">{erros.itens}</p>
         )}
-
-        <div className="mt-6 flex flex-col gap-3 sm:flex-row-reverse">
-          <button
-            type="submit"
-            disabled={checkout.isPending || itensPagaveis.length === 0}
-            className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-acento-escuro px-6 py-3 font-medium text-white transition hover:bg-acento-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-escuro focus-visible:ring-offset-2 focus-visible:ring-offset-fundo disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {checkout.isPending ? "Redirecionando…" : "Finalizar compra"}
-          </button>
-          <button
-            type="button"
-            onClick={limpar}
-            disabled={checkout.isPending}
-            className="rounded-lg border border-borda px-6 py-3 text-texto transition hover:bg-superficie disabled:opacity-50"
-          >
-            Limpar pedido
-          </button>
-        </div>
-      </form>
+      </div>
     </section>
   );
 }

@@ -7,20 +7,20 @@ export default function Apresentacao() {
       <div className="grid gap-0 sm:grid-cols-2">
         <img
           src="/apresentacao-atelie.jpg"
-          alt="Atelie ++ — costura sob medida"
+          alt="Marca do Ateliê da Sete — estrela de sete pontas e agulha"
           loading="lazy"
           className="aspect-[4/3] w-full object-cover sm:aspect-auto sm:h-full"
         />
         <div className="flex flex-col justify-center gap-3 p-6 sm:p-8">
           <h1 className="font-display text-3xl font-semibold text-texto sm:text-4xl">
-            Atelie ++
+            Ateliê da Sete
           </h1>
           <p className="text-sm font-medium uppercase tracking-wide text-acento">
-            Costura sob medida
+            Roupas & Artigos Religiosos
           </p>
           <p className="text-base leading-relaxed text-texto-suave">
-            Peças feitas com cuidado e atenção aos detalhes. Explore a vitrine,
-            monte sua seleção e finalize o pedido pelo WhatsApp.
+            Roupas e paramentos de terreiro, sob medida e conforme o fundamento
+            da sua casa. Explore os trabalhos e fale com a gente pelo WhatsApp.
           </p>
         </div>
       </div>

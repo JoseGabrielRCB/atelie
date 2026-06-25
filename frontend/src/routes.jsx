@@ -9,6 +9,12 @@ import Encomenda from "./pages/Encomenda.jsx";
 import PagamentoSucesso from "./pages/pagamento/Sucesso.jsx";
 import PagamentoPendente from "./pages/pagamento/Pendente.jsx";
 import PagamentoFalha from "./pages/pagamento/Falha.jsx";
+// Conta do cliente (público + guardado)
+import { RotaCliente } from "./context/ContaContext.jsx";
+import ContaCadastro from "./pages/conta/Cadastro.jsx";
+import ContaLogin from "./pages/conta/Login.jsx";
+import MinhaConta from "./pages/conta/MinhaConta.jsx";
+import MeusPedidos from "./pages/conta/MeusPedidos.jsx";
 // Admin
 import AdminLayout from "./components/admin/AdminLayout.jsx";
 import RotaProtegida, {
@@ -27,6 +33,7 @@ import Cores from "./pages/admin/Cores.jsx";
 import Destaques from "./pages/admin/Destaques.jsx";
 import Encomendas from "./pages/admin/Encomendas.jsx";
 import Vendas from "./pages/admin/Vendas.jsx";
+import Promocoes from "./pages/admin/Promocoes.jsx";
 import Funcionarios from "./pages/admin/Funcionarios.jsx";
 import Whatsapp from "./pages/admin/Whatsapp.jsx";
 
@@ -45,6 +52,25 @@ export default function AppRoutes() {
         <Route path="pagamento/sucesso" element={<PagamentoSucesso />} />
         <Route path="pagamento/pendente" element={<PagamentoPendente />} />
         <Route path="pagamento/falha" element={<PagamentoFalha />} />
+        {/* Conta do cliente (CSR; login/cadastro públicos, perfil/pedidos guardados). */}
+        <Route path="conta/login" element={<ContaLogin />} />
+        <Route path="conta/cadastro" element={<ContaCadastro />} />
+        <Route
+          path="conta"
+          element={
+            <RotaCliente>
+              <MinhaConta />
+            </RotaCliente>
+          }
+        />
+        <Route
+          path="conta/pedidos"
+          element={
+            <RotaCliente>
+              <MeusPedidos />
+            </RotaCliente>
+          }
+        />
       </Route>
 
       {/* Login do admin (sem layout do painel) */}
@@ -84,6 +110,14 @@ export default function AppRoutes() {
           element={
             <ExigeFinanceiro>
               <Vendas />
+            </ExigeFinanceiro>
+          }
+        />
+        <Route
+          path="promocoes"
+          element={
+            <ExigeFinanceiro>
+              <Promocoes />
             </ExigeFinanceiro>
           }
         />

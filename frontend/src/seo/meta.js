@@ -9,23 +9,23 @@ const OG_IMAGE_PATH = "/apresentacao-atelie.jpg";
 export const ROTAS_SSG = ["/", "/vitrine", "/encomenda"];
 
 const PADRAO = {
-  title: "Ateliê ++ | Costura sob medida em Campo Grande-MS",
+  title: "Ateliê da Sete | Roupas de Umbanda e Candomblé - Campo Grande",
   description:
-    "Ateliê de costura sob medida em Campo Grande-MS. Peças prontas e encomendas feitas à mão, com cuidado em cada detalhe. Faça seu pedido pelo WhatsApp.",
+    "Roupas e paramentos de Umbanda e Candomblé, sob medida e conforme o fundamento da sua casa. De Campo Grande/MS para todo o Brasil. Fale no WhatsApp.",
 };
 
 const META = {
   "/": { ...PADRAO, canonical: "/" },
   "/vitrine": {
-    title: "Vitrine | Roupas e peças do Ateliê ++ em Campo Grande",
+    title: "Os trabalhos | Ateliê da Sete — roupas e paramentos de terreiro",
     description:
-      "Conheça as peças disponíveis no Ateliê ++ em Campo Grande-MS. Tamanhos, cores e novidades. Escolha a sua e finalize o pedido pelo WhatsApp.",
+      "Conheça os trabalhos do Ateliê da Sete: roupa branca de corrente, paramentos de guias e Orixás. Sob medida, conforme o fundamento da sua casa.",
     canonical: "/vitrine",
   },
   "/encomenda": {
-    title: "Encomenda sob medida | Ateliê ++ Campo Grande-MS",
+    title: "Encomenda sob medida | Ateliê da Sete — Campo Grande/MS",
     description:
-      "Peça uma roupa sob medida no Ateliê ++ em Campo Grande-MS: descreva a peça, envie fotos de referência e medidas. Orçamento sem compromisso pelo WhatsApp.",
+      "Encomende a sua roupa de trabalho ou paramento conforme o fundamento da sua casa: descreva o guia e a casa, envie referências e medidas. Combinamos pelo WhatsApp.",
     canonical: "/encomenda",
   },
 };
@@ -44,9 +44,9 @@ export function jsonLdLocalBusiness() {
     "@type": "ClothingStore",
     name: SITE.nome,
     description:
-      "Ateliê de costura sob medida em Campo Grande-MS. Peças prontas e encomendas feitas à mão.",
+      "Roupas e paramentos de Umbanda e Candomblé, sob medida, conforme o fundamento de cada casa. Campo Grande/MS, para todo o Brasil.",
     image: abs(OG_IMAGE_PATH),
-    areaServed: "Campo Grande - MS",
+    areaServed: ["Campo Grande - MS", "Brasil"],
     address: {
       "@type": "PostalAddress",
       addressLocality: "Campo Grande",

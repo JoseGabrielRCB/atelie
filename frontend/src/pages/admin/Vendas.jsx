@@ -3,7 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import { Eye } from "lucide-react";
 import { useAdminPedidos } from "../../hooks/useAdminPedidos";
 import { useOrdenacao, ordenarPor } from "../../hooks/useOrdenacao";
+import { usePaginacao } from "../../hooks/usePaginacao";
 import { CabecalhoOrdenavel, OrdenarMobile } from "../../components/admin/CabecalhoOrdenavel";
+import { Paginacao } from "../../components/admin/Paginacao";
 import Modal from "../../components/admin/Modal";
 import Preco from "../../components/Preco";
 import { obterPedido } from "../../lib/api";
@@ -61,6 +63,10 @@ export default function Vendas() {
     total: (p) => Number(p.total) || 0,
     status: (p) => ORDEM_STATUS.indexOf(p.status),
     criado_em: (p) => p.criado_em,
+  });
+
+  const pag = usePaginacao(lista, {
+    resetKey: `${filtroStatus}|${ord.ordenacao.coluna}|${ord.ordenacao.direcao}`,
   });
 
   const aguardando = todos.filter((p) => p.status === "aguardando_pagamento").length;
@@ -131,6 +137,7 @@ export default function Vendas() {
           <table className="tabela-cartoes w-full text-left text-sm">
             <thead className="border-b border-borda text-texto-suave">
               <tr>
+                <th className="px-4 py-3 font-medium">Código</th>
                 <CabecalhoOrdenavel coluna="nome" rotulo="Cliente" ordenacao={ord.ordenacao} aoOrdenar={ord.alternar} />
                 <CabecalhoOrdenavel coluna="itens" rotulo="Itens" ordenacao={ord.ordenacao} aoOrdenar={ord.alternar} />
                 <CabecalhoOrdenavel coluna="total" rotulo="Total" ordenacao={ord.ordenacao} aoOrdenar={ord.alternar} />
@@ -140,7 +147,7 @@ export default function Vendas() {
               </tr>
             </thead>
             <tbody className="divide-y divide-borda">
-              {lista.map((p) => {
+              {pag.itensPagina.map((p) => {
                 const n = contarItens(p);
                 return (
                   <tr
@@ -148,7 +155,10 @@ export default function Vendas() {
                     onClick={() => setDetalheId(p.id)}
                     className="cursor-pointer transition hover:bg-borda/30"
                   >
-                    <td className="cel-principal px-4 py-3 font-medium text-texto">
+                    <td className="cel-principal px-4 py-3 font-mono font-medium text-texto" data-rotulo="Código">
+                      {p.codigo}
+                    </td>
+                    <td className="px-4 py-3 font-medium text-texto" data-rotulo="Cliente">
                       <span className="block max-w-[16rem] truncate" title={p.nome}>
                         {p.nome}
                       </span>
@@ -186,6 +196,14 @@ export default function Vendas() {
             </tbody>
           </table>
         </div>
+        <Paginacao
+          pagina={pag.pagina}
+          totalPaginas={pag.totalPaginas}
+          total={pag.total}
+          porPagina={pag.porPagina}
+          aoMudar={pag.setPagina}
+          rotuloItens="vendas"
+        />
         </>
       )}
 
@@ -219,6 +237,7 @@ function DetalheVenda({ id, aoFechar }) {
   return (
     <div className="space-y-5">
       <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+        <Linha rotulo="Código" valor={<span className="font-mono">{p.codigo}</span>} />
         <Linha rotulo="Cliente" valor={p.nome} />
         <Linha rotulo="Contato" valor={p.contato || "—"} />
         <Linha

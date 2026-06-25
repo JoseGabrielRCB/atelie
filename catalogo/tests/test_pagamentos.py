@@ -44,7 +44,7 @@ def peca_sob_medida(db, categoria):
 
 
 def _mock_preferencia(monkeypatch, pref_id="PREF-123", init="https://mp/checkout/123"):
-    def fake(pedido, itens, base_url, frontend_url, notification_url):
+    def fake(pedido, itens, base_url, frontend_url, notification_url, payer=None):
         return {"id": pref_id, "init_point": init}
 
     monkeypatch.setattr(pagamentos, "criar_preferencia", fake)
@@ -103,14 +103,13 @@ def test_disponivel_nunca_negativo(api, peca_ativa, variacao_p):
 # --------------------------------------------------------------------------
 
 
-def test_checkout_recalcula_preco_ignora_cliente(api, monkeypatch, variacao_p):
+def test_checkout_recalcula_preco_ignora_cliente(api, monkeypatch, variacao_p, cliente):
     _mock_preferencia(monkeypatch)
+    api.force_authenticate(cliente.usuario)
     url = reverse("checkout")
     resp = api.post(
         url,
         {
-            "nome": "Maria",
-            "contato": "81999999999",
             # tenta enviar preço/total maliciosos — devem ser ignorados
             "total": "0.01",
             "itens": [{"variacao_id": variacao_p.id, "quantidade": 2, "preco_unit": "0.01"}],
@@ -123,47 +122,59 @@ def test_checkout_recalcula_preco_ignora_cliente(api, monkeypatch, variacao_p):
     assert pedido.itens.first().preco_unit == Decimal("199.90")
     assert resp.data["init_point"] == "https://mp/checkout/123"
     assert pedido.mp_preference_id == "PREF-123"
+    # pedido associado à conta do cliente; nome vem da conta
+    assert pedido.cliente_id == cliente.id
+    assert pedido.nome == cliente.nome
     # estoque NÃO decrementado ainda
     variacao_p.refresh_from_db()
     assert variacao_p.estoque == 3
 
 
-def test_checkout_rejeita_sob_medida(api, monkeypatch, peca_sob_medida):
+def test_checkout_exige_conta_de_cliente(api, monkeypatch, variacao_p, admin_user):
+    """Anônimo → 401; staff → 403 (checkout é só de cliente)."""
     _mock_preferencia(monkeypatch)
+    url = reverse("checkout")
+    corpo = {"itens": [{"variacao_id": variacao_p.id, "quantidade": 1}]}
+    assert api.post(url, corpo, format="json").status_code == 401
+    api.force_authenticate(admin_user)
+    assert api.post(url, corpo, format="json").status_code == 403
+
+
+def test_checkout_rejeita_sob_medida(api, monkeypatch, peca_sob_medida, cliente):
+    _mock_preferencia(monkeypatch)
+    api.force_authenticate(cliente.usuario)
     v = Variacao.objects.create(peca=peca_sob_medida, tamanho="Único", cor="", estoque=5)
     url = reverse("checkout")
     resp = api.post(
         url,
-        {"nome": "Ana", "contato": "8198", "itens": [{"variacao_id": v.id, "quantidade": 1}]},
+        {"itens": [{"variacao_id": v.id, "quantidade": 1}]},
         format="json",
     )
     assert resp.status_code == 400
     assert "itens" in resp.data
 
 
-def test_checkout_rejeita_peca_inativa(api, monkeypatch, peca_inativa):
+def test_checkout_rejeita_peca_inativa(api, monkeypatch, peca_inativa, cliente):
     _mock_preferencia(monkeypatch)
+    api.force_authenticate(cliente.usuario)
     v = Variacao.objects.create(peca=peca_inativa, tamanho="P", cor="", estoque=5)
     url = reverse("checkout")
     resp = api.post(
         url,
-        {"nome": "Ana", "contato": "8198", "itens": [{"variacao_id": v.id, "quantidade": 1}]},
+        {"itens": [{"variacao_id": v.id, "quantidade": 1}]},
         format="json",
     )
     assert resp.status_code == 400
     assert "itens" in resp.data
 
 
-def test_checkout_estoque_insuficiente_409(api, monkeypatch, variacao_p):
+def test_checkout_estoque_insuficiente_409(api, monkeypatch, variacao_p, cliente):
     _mock_preferencia(monkeypatch)
+    api.force_authenticate(cliente.usuario)
     url = reverse("checkout")
     resp = api.post(
         url,
-        {
-            "nome": "Ana",
-            "contato": "8198",
-            "itens": [{"variacao_id": variacao_p.id, "quantidade": 99}],
-        },
+        {"itens": [{"variacao_id": variacao_p.id, "quantidade": 99}]},
         format="json",
     )
     assert resp.status_code == 409

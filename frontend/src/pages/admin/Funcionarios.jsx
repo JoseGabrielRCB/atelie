@@ -8,7 +8,9 @@ import {
   excluirUsuario,
 } from "../../lib/api";
 import { useOrdenacao, ordenarPor } from "../../hooks/useOrdenacao";
+import { usePaginacao } from "../../hooks/usePaginacao";
 import { CabecalhoOrdenavel, OrdenarMobile } from "../../components/admin/CabecalhoOrdenavel";
+import { Paginacao } from "../../components/admin/Paginacao";
 import Modal from "../../components/admin/Modal";
 import ConfirmarExclusao from "../../components/admin/ConfirmarExclusao";
 import { Carregando, Erro, Vazio } from "../../components/Estado";
@@ -77,6 +79,10 @@ export default function Funcionarios() {
     papel: (u) => u.papel,
     ativo: (u) => (u.ativo ? 1 : 0),
     criado_em: (u) => u.criado_em ?? "",
+  });
+
+  const pag = usePaginacao(lista, {
+    resetKey: `${busca}|${ord.ordenacao.coluna}|${ord.ordenacao.direcao}`,
   });
 
   function pedirExclusao(u) {
@@ -161,7 +167,7 @@ export default function Funcionarios() {
               </tr>
             </thead>
             <tbody className="divide-y divide-borda">
-              {lista.map((u) => {
+              {pag.itensPagina.map((u) => {
                 const ocupado = acaoMut.isPending && acaoMut.variables?.id === u.id;
                 return (
                   <tr key={u.id} className={u.ativo ? "" : "bg-borda/20"}>
@@ -258,6 +264,14 @@ export default function Funcionarios() {
             </tbody>
           </table>
         </div>
+        <Paginacao
+          pagina={pag.pagina}
+          totalPaginas={pag.totalPaginas}
+          total={pag.total}
+          porPagina={pag.porPagina}
+          aoMudar={pag.setPagina}
+          rotuloItens="funcionários"
+        />
         </>
       )}
 

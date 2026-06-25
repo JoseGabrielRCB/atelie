@@ -5,6 +5,8 @@ import { Star, StarOff, AlertTriangle } from "lucide-react";
 import { useAdminPecas } from "../../hooks/useAdminPecas";
 import { atualizarPeca } from "../../lib/api";
 import { useOrdenacao, ordenarPor } from "../../hooks/useOrdenacao";
+import { usePaginacao } from "../../hooks/usePaginacao";
+import { Paginacao } from "../../components/admin/Paginacao";
 import Preco from "../../components/Preco";
 import { Carregando, Erro, Vazio } from "../../components/Estado";
 import { Feedback, Selo, inputClasse } from "../../components/admin/ui";
@@ -63,6 +65,10 @@ export default function Destaques() {
     preco: (p) => Number(p.preco),
     ativo: (p) => (p.ativo ? 1 : 0),
     destaque: (p) => (p.destaque ? 1 : 0),
+  });
+
+  const pag = usePaginacao(lista, {
+    resetKey: `${buscaDeb}|${soDestaque}|${ordenacao.coluna}|${ordenacao.direcao}`,
   });
 
   return (
@@ -152,7 +158,7 @@ export default function Destaques() {
               </tr>
             </thead>
             <tbody>
-              {lista.map((p) => {
+              {pag.itensPagina.map((p) => {
                 const ocultaEmDestaque = p.destaque && !p.ativo;
                 const salvando =
                   destaqueMut.isPending && destaqueMut.variables?.id === p.id;
@@ -236,6 +242,14 @@ export default function Destaques() {
             </tbody>
           </table>
         </div>
+        <Paginacao
+          pagina={pag.pagina}
+          totalPaginas={pag.totalPaginas}
+          total={pag.total}
+          porPagina={pag.porPagina}
+          aoMudar={pag.setPagina}
+          rotuloItens="peças"
+        />
         </>
       )}
 

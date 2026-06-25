@@ -19,7 +19,7 @@ export default function AdminLayout() {
             {/* Logo provido pelo dono em frontend/public/logo-atelie.png. */}
             <img
               src="/logo-atelie.png"
-              alt="Atelie ++"
+              alt="Ateliê da Sete"
               className="h-7 w-auto sm:h-8"
             />
             <span className="rounded bg-borda/60 px-2 py-0.5 text-xs font-medium text-texto-suave">

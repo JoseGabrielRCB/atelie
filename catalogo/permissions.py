@@ -88,3 +88,25 @@ class SoDono(BasePermission):
 
     def has_permission(self, request, view):
         return eh_dono(request.user)
+
+
+def eh_cliente(user) -> bool:
+    """True se ``user`` é uma conta de CLIENTE da loja (não staff/sem Perfil).
+
+    Cliente = autenticado, com ``Cliente`` (OneToOne), ``is_staff=False`` e SEM
+    ``Perfil``. Mantém o login do cliente separado do staff (e vice-versa).
+    """
+    if not (user and user.is_authenticated):
+        return False
+    if user.is_staff or getattr(user, "perfil", None) is not None:
+        return False
+    return getattr(user, "cliente", None) is not None
+
+
+class EhCliente(BasePermission):
+    """Conta de CLIENTE (área da conta do cliente e checkout). Staff é recusado."""
+
+    message = "Entre com a sua conta de cliente para continuar."
+
+    def has_permission(self, request, view):
+        return eh_cliente(request.user)

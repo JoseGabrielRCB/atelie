@@ -29,11 +29,15 @@ def _cliente():
     return mercadopago.SDK(settings.MP_ACCESS_TOKEN)
 
 
-def criar_preferencia(pedido, itens, base_url, frontend_url, notification_url):
+def criar_preferencia(pedido, itens, base_url, frontend_url, notification_url, payer=None):
     """Cria uma preferência de Checkout Pro e devolve o dict de resposta do MP.
 
     ``itens`` é uma lista de dicts já calculados NO SERVIDOR no formato do MP:
     ``{"title", "quantity", "unit_price", "currency_id"}``.
+
+    ``payer`` (opcional) identifica o comprador (vem da conta do cliente), ex.:
+    ``{"name", "email", "identification": {"type": "CPF", "number": "..."}}``.
+    Nunca logamos esse conteúdo (dados sensíveis — LGPD).
 
     Retorna o corpo (``response["response"]``) com, entre outros, ``id`` e
     ``init_point``.
@@ -54,6 +58,8 @@ def criar_preferencia(pedido, itens, base_url, frontend_url, notification_url):
         "auto_return": "approved",
         # Checkout Pro habilita Pix + cartão por padrão.
     }
+    if payer:
+        dados["payer"] = payer
 
     resultado = _cliente().preference().create(dados)
     return resultado["response"]

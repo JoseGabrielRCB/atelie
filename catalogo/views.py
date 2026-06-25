@@ -11,6 +11,7 @@ from decimal import Decimal
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.db.models import F
 from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
@@ -22,11 +23,12 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from . import evolution, pagamentos
+from . import evolution, pagamentos, promocoes
 from .comandos import interpretar
 from .estoque import disponibilidade
 from .models import (
     Categoria,
+    Cliente,
     Cor,
     Encomenda,
     EncomendaImagem,
@@ -37,9 +39,11 @@ from .models import (
     Peca,
     Pedido,
     Perfil,
+    Promocao,
     Variacao,
 )
 from .permissions import (
+    EhCliente,
     EhEquipeAtiva,
     LeituraPublicaEscritaEquipe,
     PodeFinanceiro,
@@ -55,13 +59,19 @@ from .notificacoes import (
 from .serializers import (
     CategoriaSerializer,
     CheckoutSerializer,
+    ClienteSerializer,
+    ClienteUpdateSerializer,
+    ContaCadastroSerializer,
+    ContaTokenSerializer,
     CorSerializer,
     EncomendaCreateSerializer,
     EncomendaSerializer,
+    CupomValidarSerializer,
     ImagemSerializer,
     MudarSenhaSerializer,
     PecaSerializer,
     PedidoSerializer,
+    PromocaoSerializer,
     TokenComPapelSerializer,
     UsuarioCreateSerializer,
     UsuarioSerializer,
@@ -214,13 +224,14 @@ class EncomendaViewSet(viewsets.ModelViewSet):
 class CheckoutView(APIView):
     """Cria um Pedido de peças prontas e a preferência de pagamento no MP.
 
-    Público (AllowAny). O preço/total é SEMPRE recalculado no servidor a partir
-    do banco; valores enviados pelo cliente são ignorados. O estoque NÃO é
-    decrementado aqui — só após o pagamento aprovado (webhook). Throttle
-    anti-abuso reaproveita o escopo ``encomendas``.
+    Exige **conta de cliente** (``EhCliente``): nome/contato/CPF vêm da conta
+    autenticada (o corpo só traz ``itens``). O preço/total é SEMPRE recalculado
+    no servidor; valores do cliente são ignorados. O estoque NÃO é decrementado
+    aqui — só após o pagamento aprovado (webhook). Throttle anti-abuso reaproveita
+    o escopo ``encomendas``.
     """
 
-    permission_classes = [AllowAny]
+    permission_classes = [EhCliente]
     throttle_scope = "encomendas"
     throttle_classes = [ScopedRateThrottle]
 
@@ -228,6 +239,7 @@ class CheckoutView(APIView):
         serializer = CheckoutSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         dados = serializer.validated_data
+        cliente = request.user.cliente
 
         # Agrega quantidades por variação (caso o cliente repita o id).
         pedido_por_variacao = {}
@@ -269,18 +281,43 @@ class CheckoutView(APIView):
                     status=status.HTTP_409_CONFLICT,
                 )
 
-        # Cria o pedido + itens com preço travado do banco.
+        # Itens para o motor de descontos (preço do banco, nunca do cliente).
+        itens_calc = [
+            {
+                "peca": por_id[vid].peca,
+                "quantidade": qtd,
+                "preco": por_id[vid].peca.preco,
+            }
+            for vid, qtd in pedido_por_variacao.items()
+        ]
+
+        # Cupom opcional: valida no servidor (silencioso — cupom inválido é
+        # ignorado, o cliente já viu o erro em /cupom/validar/ antes de pagar).
+        cupom = None
+        codigo_cupom = (dados.get("cupom") or "").strip()
+        if codigo_cupom:
+            cupom, _erro = promocoes.validar_cupom(codigo_cupom, itens_calc)
+
+        resumo = promocoes.calcular(itens_calc, cupom=cupom)
+        total = resumo["total"]
+        desconto = resumo["desconto"]
+
+        # Cria o pedido + itens (preço unitário de catálogo travado no item; o
+        # desconto fica no Pedido e o total já vai descontado ao MP).
         agora = timezone.now()
         expira_em = agora + timezone.timedelta(minutes=PEDIDO_VALIDADE_MINUTOS)
-        total = Decimal("0.00")
         itens_mp = []
 
+        contato = cliente.telefone or cliente.usuario.email
         with transaction.atomic():
             pedido = Pedido.objects.create(
-                nome=dados["nome"],
-                contato=dados["contato"],
+                cliente=cliente,
+                nome=cliente.nome,
+                contato=contato,
                 status=Pedido.Status.AGUARDANDO_PAGAMENTO,
-                total=Decimal("0.00"),
+                total=total,
+                desconto=desconto,
+                cupom=cupom,
                 expira_em=expira_em,
             )
             for vid, qtd in pedido_por_variacao.items():
@@ -292,7 +329,6 @@ class CheckoutView(APIView):
                     quantidade=qtd,
                     preco_unit=preco_unit,
                 )
-                total += preco_unit * qtd
                 itens_mp.append(
                     {
                         "title": variacao.peca.nome,
@@ -301,12 +337,28 @@ class CheckoutView(APIView):
                         "currency_id": "BRL",
                     }
                 )
-            pedido.total = total
-            pedido.save(update_fields=["total"])
+
+        # Se houve desconto, o MP recebe UMA linha com o total já descontado
+        # (garante que o valor cobrado == total do servidor, sem erro de rateio).
+        if desconto > 0:
+            n = sum(pedido_por_variacao.values())
+            itens_mp = [
+                {
+                    "title": f"{pedido.codigo} — {n} {'item' if n == 1 else 'itens'}",
+                    "quantity": 1,
+                    "unit_price": float(total),
+                    "currency_id": "BRL",
+                }
+            ]
 
         # Cria a preferência no Mercado Pago (fora da transação de banco).
         base_url = settings.MP_PUBLIC_URL.rstrip("/")
         notification_url = f"{base_url}/api/webhooks/mercadopago/"
+        payer = {
+            "name": cliente.nome,
+            "email": cliente.usuario.email,
+            "identification": {"type": "CPF", "number": cliente.cpf},
+        }
         try:
             resposta = pagamentos.criar_preferencia(
                 pedido,
@@ -314,6 +366,7 @@ class CheckoutView(APIView):
                 base_url=base_url,
                 frontend_url=settings.FRONTEND_URL,
                 notification_url=notification_url,
+                payer=payer,
             )
         except Exception:
             # Não vaza detalhes do provedor; o pedido fica pendente e expira.
@@ -444,6 +497,13 @@ class WebhookMercadoPagoView(APIView):
             pedido.status = Pedido.Status.PAGO
             pedido.mp_payment_id = evento_id
             pedido.save(update_fields=["status", "mp_payment_id"])
+
+            # Conta o uso do cupom SÓ quando o pedido é pago (não no abandono),
+            # com lock na promoção para evitar corrida.
+            if pedido.cupom_id:
+                Promocao.objects.select_for_update().filter(pk=pedido.cupom_id).update(
+                    usos=F("usos") + 1
+                )
 
         # Sinal disparado fora da transação (consumidores externos: bot WhatsApp).
         compra_paga.send(sender=Pedido, pedido=pedido)
@@ -749,3 +809,162 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         saida = UsuarioSerializer(user).data
         saida.update(extra)
         return Response(saida)
+
+
+# --------------------------------------------------------------------------
+# Conta do CLIENTE da loja (cadastro/login/perfil/histórico) — separada do staff
+# --------------------------------------------------------------------------
+
+
+class ContaCadastroView(APIView):
+    """Cadastro público de cliente: cria User (e-mail = login) + Cliente.
+
+    Não ecoa CPF/senha. Throttle anti-abuso reaproveita o escopo ``encomendas``.
+    """
+
+    permission_classes = [AllowAny]
+    throttle_scope = "encomendas"
+    throttle_classes = [ScopedRateThrottle]
+
+    def post(self, request, *args, **kwargs):
+        serializer = ContaCadastroSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        dados = serializer.validated_data
+        with transaction.atomic():
+            user = User.objects.create_user(
+                username=dados["email"],
+                email=dados["email"],
+                password=dados["senha"],
+                first_name=dados["nome"][:150],
+                is_staff=False,
+            )
+            Cliente.objects.create(
+                usuario=user,
+                nome=dados["nome"],
+                cpf=dados["cpf"],
+                telefone=dados.get("telefone", "") or "",
+            )
+        return Response(
+            {"mensagem": "Conta criada com sucesso! Faça login para continuar."},
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class ContaLoginView(TokenObtainPairView):
+    """Login do cliente (e-mail + senha) → JWT. Recusa contas de staff."""
+
+    serializer_class = ContaTokenSerializer
+
+
+class ContaMeView(APIView):
+    """Dados da conta do cliente logado. GET (ver) / PATCH (editar nome/telefone)."""
+
+    permission_classes = [EhCliente]
+
+    def get(self, request, *args, **kwargs):
+        return Response(ClienteSerializer(request.user.cliente).data)
+
+    def patch(self, request, *args, **kwargs):
+        cliente = request.user.cliente
+        serializer = ClienteUpdateSerializer(cliente, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(ClienteSerializer(cliente).data)
+
+
+class ContaSenhaView(APIView):
+    """Troca da própria senha (cliente logado)."""
+
+    permission_classes = [EhCliente]
+
+    def post(self, request, *args, **kwargs):
+        serializer = MudarSenhaSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        user = request.user
+        if not user.check_password(serializer.validated_data["senha_atual"]):
+            raise serializers.ValidationError({"senha_atual": ["Senha atual incorreta."]})
+        user.set_password(serializer.validated_data["nova_senha"])
+        user.save(update_fields=["password"])
+        return Response({"mensagem": "Senha atualizada com sucesso."})
+
+
+class ContaPedidosView(viewsets.ReadOnlyModelViewSet):
+    """Histórico de pedidos do PRÓPRIO cliente (somente leitura)."""
+
+    serializer_class = PedidoSerializer
+    permission_classes = [EhCliente]
+    filterset_fields = ["status"]
+
+    def get_queryset(self):
+        return (
+            Pedido.objects.filter(cliente=self.request.user.cliente)
+            .prefetch_related("itens__variacao__peca")
+            .all()
+        )
+
+
+# --------------------------------------------------------------------------
+# Promoções / cupons
+# --------------------------------------------------------------------------
+
+
+class PromocaoViewSet(viewsets.ModelViewSet):
+    """CRUD de promoções/cupons — gate FINANCEIRO (Dono ou acesso_financeiro)."""
+
+    queryset = Promocao.objects.prefetch_related("pecas", "categorias").all()
+    serializer_class = PromocaoSerializer
+    permission_classes = [PodeFinanceiro]
+    filterset_fields = ["tipo_aplicacao", "ativo", "escopo"]
+
+
+class CupomValidarView(APIView):
+    """Pré-valida um cupom contra o carrinho (público) e devolve o desconto.
+
+    NÃO aplica nada — só informa ao cliente, antes de pagar, se o cupom vale e
+    quanto abate. O desconto definitivo é recalculado no checkout (servidor).
+    """
+
+    permission_classes = [AllowAny]
+    throttle_scope = "encomendas"
+    throttle_classes = [ScopedRateThrottle]
+
+    def post(self, request, *args, **kwargs):
+        serializer = CupomValidarSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        dados = serializer.validated_data
+
+        # Monta os itens a partir do banco (preço nunca vem do cliente).
+        por_variacao = {}
+        for item in dados["itens"]:
+            vid = item["variacao_id"]
+            por_variacao[vid] = por_variacao.get(vid, 0) + item["quantidade"]
+        variacoes = Variacao.objects.select_related("peca").filter(
+            id__in=por_variacao.keys()
+        )
+        itens_calc = [
+            {"peca": v.peca, "quantidade": por_variacao[v.id], "preco": v.peca.preco}
+            for v in variacoes
+            if v.peca.ativo and v.peca.tipo == Peca.Tipo.PRONTA
+        ]
+        if not itens_calc:
+            return Response(
+                {"valido": False, "mensagem": "Adicione itens ao carrinho para usar um cupom."},
+                status=status.HTTP_200_OK,
+            )
+
+        cupom, erro = promocoes.validar_cupom(dados["codigo"], itens_calc)
+        if erro:
+            return Response({"valido": False, "mensagem": erro}, status=status.HTTP_200_OK)
+
+        resumo = promocoes.calcular(itens_calc, cupom=cupom)
+        return Response(
+            {
+                "valido": True,
+                "codigo": cupom.codigo,
+                "desconto": f"{resumo['desconto']:.2f}",
+                "total_bruto": f"{resumo['bruto']:.2f}",
+                "total": f"{resumo['total']:.2f}",
+                "mensagem": "Cupom aplicado.",
+            },
+            status=status.HTTP_200_OK,
+        )

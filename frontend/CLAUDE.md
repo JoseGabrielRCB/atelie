@@ -7,9 +7,10 @@
 
 Dois lados no **mesmo** projeto Vite:
 
-- **Área do cliente** (`/`, `/peca/:id`, `/carrinho`) — site público, **sem login**. O cliente
-  navega a vitrine, monta um pedido e **paga online** (Mercado Pago, checkout hospedado). A
-  **encomenda sob medida** (`/encomenda`) continua finalizando no **WhatsApp** (não muda).
+- **Área do cliente** (`/`, `/peca/:id`, `/carrinho`, `/conta/*`) — site público. Navegar a vitrine
+  é livre, mas **finalizar a compra exige conta** (cadastro/login do cliente) — o checkout usa os
+  dados da conta + CPF no Mercado Pago. A **encomenda sob medida** (`/encomenda`) continua pública e
+  finaliza no **WhatsApp** (não muda). A sessão do cliente é **separada** da do admin.
 - **Painel do admin** (`/admin/*`) — gestão de **catálogo e estoque** por uma conta única,
   protegido por **login JWT**. **Não** há tela de venda/pedido/financeiro (fora de escopo):
   os pedidos chegam pelo WhatsApp.
@@ -108,10 +109,13 @@ frontend/
 
 | Rota          | Componente     | Descrição |
 |---------------|----------------|-----------|
-| `/`           | `Home`         | **Landing/SEO** (única `<h1>`). 8 seções (copys de `COPYS_HOME.md`): Hero + 2 CTAs + microcopy; **Peças em destaque** (`?destaque=true`, fallback às recentes, reusa `PecaCard`); Sobre (foto `apresentacao-atelie.jpg`, `loading="lazy"`); O que oferecemos; Como funciona (4 passos); Depoimentos; FAQ; CTA final. Textos lidos de `config/site.js`. Pré-renderizada (SSG) com JSON-LD LocalBusiness + FAQPage. |
-| `/vitrine`    | `Vitrine`      | Catálogo (`<h1>` "Vitrine"). Grade responsiva (2 cols mobile → 4 desktop). Busca por nome (**máx. 60**, debounce 350ms → `?search=`), filtro por categoria (`?categoria=`), ordenação `-criado_em`. Selo "Esgotado" quando todas as variações estão esgotadas. Estados: skeleton / erro / vazio. CTA de encomenda no rodapé da página. Pré-renderizada (SSG). |
+| `/`           | `Home`         | **Landing/SEO** (única `<h1>`). 8 seções (copys de `COPYS_HOME.md` — marca **Ateliê da Sete**, Umbanda + Candomblé): Hero + 2 CTAs (WhatsApp "Me conta o fundamento da sua casa" / "Ver os trabalhos") + microcopy; **Alguns trabalhos** (`?destaque=true`, fallback às recentes, reusa `PecaCard`); **Sobre/manifesto** ("Tem nome de fundamento…", foto `apresentacao-atelie.jpg`); **O que costuramos** (catálogo com vocabulário); **Diferenciais**; Depoimentos; FAQ (6); CTA final. Textos lidos de `config/site.js`. Pré-renderizada (SSG) com JSON-LD ClothingStore + FAQPage. |
+| `/vitrine`    | `Vitrine`      | Catálogo (`<h1>` "Vitrine"). Grade responsiva (2 cols mobile → 4 desktop). Busca por nome (**máx. 60**, debounce 350ms → `?search=`), filtro por categoria (`?categoria=`), ordenação `-criado_em`. **Paginação server-side** (`usePecasPaginadas`, 20/página, controles `Paginacao`; volta à página 1 ao mudar busca/categoria). Selo "Esgotado" quando todas as variações estão esgotadas. Estados: skeleton / erro / vazio. CTA de encomenda no rodapé da página. Pré-renderizada (SSG). |
 | `/peca/:id`   | `DetalhePeca`  | Galeria (`Galeria` — carretel: imagem grande + setas anterior/próxima circulando da principal à última + miniaturas clicáveis com contador "i/total"), nome, preço, descrição. `SeletorVariacao` (esgotadas desabilitadas; **se só houver 1 variação disponível, vem pré-selecionada**), quantidade (**travada até escolher tamanho/cor** quando há várias), **subtotal dinâmico (preço × quantidade)**, "Adicionar ao pedido" com feedback. Peça `sob_medida` sem variações: adiciona sem variação. |
-| `/carrinho`   | `Carrinho`     | Lista de itens (ajustar/remover, com **subtotal por linha**), **total dinâmico do pedido**, e form **"Finalizar compra"** (Nome máx. 80, Contato máx. 100; valida ambos de uma vez, PT-BR). No submit chama `criarCheckout` → redireciona ao **Mercado Pago** (`init_point`). Itens **sob medida** (sem `variacaoId`) não vão ao pagamento — aviso suave apontando para a Encomenda. **Não** limpa o carrinho aqui (só o `/pagamento/sucesso` limpa). 409 mostra a mensagem de disponibilidade; outros erros, mensagem clara. Vazio: CTA para a vitrine. |
+| `/carrinho`   | `Carrinho`     | Lista de itens (ajustar/remover, **subtotal por linha**), **total dinâmico**. Finalizar **exige conta**: deslogado → CTA "Entrar"/"Criar conta" (`?next=/carrinho`); logado → resumo "Comprando como **nome** · CPF …" + **"Finalizar compra"** que chama `criarCheckout({itens})` (nome/contato/CPF vêm da conta) → redireciona ao **Mercado Pago** (`init_point`). Itens **sob medida** ficam de fora (aviso → Encomenda). Não limpa o carrinho aqui. Vazio: CTA para a vitrine. |
+| `/conta/login` `/conta/cadastro` | `conta/Login` · `conta/Cadastro` | **Páginas públicas** (não modal). Cadastro: nome, e-mail, **CPF (máscara+validação)**, telefone (máscara), senha+confirmar — validação completa (todos os erros de uma vez) e auto-login no sucesso. Login por e-mail+senha. Ambos respeitam `?next=`. |
+| `/conta`      | `conta/MinhaConta` (guardada) | Ver/editar **nome e telefone** (e-mail/CPF read-only) + **trocar senha**. Guardada por `RotaCliente`. |
+| `/conta/pedidos` | `conta/MeusPedidos` (guardada) | Histórico **do próprio cliente** (código `PED-000042` + data + itens + total + selo de status), do mais recente ao mais antigo. Estados carregando/vazio/erro. |
 | `/pagamento/sucesso`  | `pagamento/Sucesso`  | Retorno do MP (auto_return) após aprovação: "Pagamento aprovado!". **Limpa o carrinho** e linka à vitrine. Lê `external_reference` (= pedido_id) só para exibir. (CSR, fora do SSG.) |
 | `/pagamento/pendente` | `pagamento/Pendente` | Pagamento em processamento (ex.: Pix). Explica que será contatado; **não** limpa o carrinho. (CSR, fora do SSG.) |
 | `/pagamento/falha`    | `pagamento/Falha`    | Pagamento falhou/cancelado; "Voltar ao carrinho / Tentar de novo". **Não** limpa o carrinho. (CSR, fora do SSG.) |
@@ -124,7 +128,7 @@ frontend/
 | `/admin/login`      | `Login`      | Login multiusuário (usuário/senha). Fora do layout do painel. Após entrar, o `AuthContext` lê `GET /me/`. Já autenticado → redireciona. |
 | `/admin/senha`      | `TrocarSenha` | Troca de senha. Quando a senha é **provisória**, o `RotaProtegida` traz o usuário para cá e só libera o painel após definir a nova (valida tudo de uma vez; limpa `senha_provisoria` no backend). |
 | `/admin/funcionarios` | `Funcionarios` | **Só Dono.** Tabela ordenável (nome, usuário, status, financeiro, criado em) com busca e truncamento+tooltip. "Novo funcionário" em modal (nome, usuário, e-mail opcional, senha provisória, interruptor "Liberar financeiro"). Ações por linha: ativar/desativar, resetar senha (gera provisória e mostra ao Dono), liberar/revogar financeiro, excluir (`ConfirmarExclusao`). |
-| `/admin`            | `Dashboard`  | Cartões (peças, ativas/ocultas, variações, esgotadas, categorias, destaques, encomendas novas, **Vendas pagas no mês** → link p/ `/admin/vendas`, **Pedidos aguardando pagamento**) + **3 gráficos `recharts`** (Peças por categoria — barras; Estoque disponíveis × esgotadas — donut; Encomendas por status — barras) derivados das queries existentes + **caixinha de perguntas** em linguagem natural (`lib/perguntas.js`, intenções por palavra-chave, sem API paga). A seção "Atalhos" foi **removida**. |
+| `/admin`            | `Dashboard`  | **"Pergunte ao painel"** (busca semântica `lib/perguntas.js`) em **destaque no topo**, antes dos cartões. **Cartões de métrica** (peças, ativas/ocultas, variações, esgotadas, categorias, destaques, encomendas novas e — se `podeFinanceiro` — Vendas pagas no mês/aguardando) com **ícone lucide**, número em destaque e destaque vermelho para esgotadas/encomendas novas/aguardando; **cada cartão é clicável e abre um `Modal` de detalhe** calculado dos dados já carregados (lista com selos, texto truncado) + link "Abrir a página completa". **3 gráficos `recharts`** (Peças por categoria/Encomendas por status — barras com **`LabelList`** mostrando o valor; Estoque — rosca com **total no centro** + legenda com valores) — **sem depender de hover** — e **altura responsiva** (`h-56 sm:h-64 lg:h-72`), 1 col mobile / 2 desktop. |
 | `/admin/pecas`      | `PecasLista` | Tabela **ordenável** (busca + filtro por categoria), status na vitrine/estoque; "Editar"/"Excluir" (ícones) + atalho de destaque. **Seleção em massa** (checkbox por linha + "todos", barra de ação) e **exclusão com aviso** (`ConfirmarExclusao` lista variações/imagens da peça + "sai dos destaques"; confirmação reforçada por ser cascata). "Nova peça" abre o **modal** (`NovaPecaModal`, `?nova=1`); "Editar" abre `EditarPecaModal` (`?editar=<id>`). Os forms avisam **nome duplicado** junto ao campo Nome (peça é única). |
 | `/admin/pecas/nova` | →redirect    | Redireciona para `/admin/pecas?nova=1` (cadastro em modal). |
 | `/admin/pecas/:id`  | →redirect    | `RedirecionaEdicao` → `/admin/pecas?editar=<id>` (edição em modal). Mantém deep links e o "ver detalhes" das Categorias. |
@@ -290,6 +294,12 @@ pré-renderizadas, ex. `/peca/:id` e `/admin/*`, sobem por CSR). Preencher `SITE
   `ExigeFinanceiro` (acesso direto por URL volta ao Resumo). A navegação (`AdminLayout`) e os cartões
   de Vendas do Dashboard são montados por papel — **mas a segurança é do backend** (esconder é só UX).
   O Dashboard só busca `/pedidos/` quando `podeFinanceiro` (evita 403 do funcionário).
+- **Auth do cliente (separada do admin)**: `ContaContext`/`useConta` gerenciam a sessão do cliente
+  com um cofre de tokens **próprio** (`tokensCliente`, chaves `atelie_cliente_*` — nunca mistura com
+  o admin). `lib/api.js` aceita `auth: "cliente"` (token/refresh/evento `auth:expirou:cliente`
+  próprios). Expõe `logado`/`cliente`/`entrar`/`cadastrar`/`sair`/`recarregar`. Guarda `RotaCliente`
+  manda ao `/conta/login?next=…`. CPF/telefone com máscara+validação em `lib/cpf.js` e
+  `lib/telefone.js` (esta reusada pela Encomenda). O backend reforça tudo (cliente ≠ staff).
 - **Cache do Query**: queries do admin usam chaves `["admin", ...]`, separadas das públicas
   (a vitrine vê só ativas; o admin vê todas). Mutações invalidam `["admin","pecas"]` /
   `["admin","peca",id]` / `["categorias"]`.
@@ -304,12 +314,92 @@ pré-renderizadas, ex. `/peca/:id` e `/admin/*`, sobem por CSR). Preencher `SITE
 - **Tabelas ordenáveis**: qualquer tabela do admin usa `hooks/useOrdenacao.js` (estado por
   `tabelaId`, **persistido em `localStorage`** — não reseta ao paginar) + `ordenarPor()` +
   `components/admin/CabecalhoOrdenavel.jsx` (cabeçalho clicável com seta na coluna ativa).
+- **Paginação (10/página) no admin**: os hooks (`useAdminPecas`/`useAdminEncomendas`/`useAdminPedidos`,
+  `listarUsuarios`, `useCores`) **agregam todas as páginas** do backend num array; a **UI pagina no
+  cliente** com `hooks/usePaginacao.js` (`ITENS_POR_PAGINA = 10`) + `components/admin/Paginacao.jsx`,
+  **depois** de busca/filtro/ordenação (recebe a lista já filtrada/ordenada; `resetKey` volta à
+  página 1 ao mudar filtro; a página é clampada quando a lista encolhe). Igual em tabela (desktop) e
+  cartões (mobile) — muda só a fatia. "Selecionar todos" usa os ids da **página atual**; a exclusão em
+  massa age sobre tudo que estiver selecionado. O **backend já pagina** (`PageNumberPagination`,
+  `count/next/previous/results`, `PAGE_SIZE=20`). *Melhoria futura (admin):* se o volume chegar a
+  milhares, migrar o admin para server-side (`?page=` sob demanda). A mesma `Paginacao` também é usada
+  nos **detalhes do Resumo** (listas dos modais de métrica do Dashboard, 10/página, cliente) e na
+  **vitrine pública**, esta já **server-side**: `usePecasPaginadas` passa `page` ao backend e usa o
+  `count` para os controles (20/página); volta à página 1 ao mudar busca/categoria.
 - **Ícones**: sempre componentes do `lucide-react` (ex.: `Plus`, `Minus`, `Pencil`, `Trash2`,
   `Eye`, `X`, `Check`), nunca imagem/SVG inline. Ícones decorativos com `aria-hidden`; quando a
   ação é só ícone, usar `aria-label`.
 
 ## Histórico de mudanças
 
+- **2026-06-25** — **Promoções e cupons** no front. **Vitrine/Detalhe**: `PecaCard` e `DetalhePeca`
+  mostram preço **riscado + promocional** + selo "Promoção" quando `em_promocao` (a peça vai ao
+  carrinho pelo `preco_promocional`; o servidor reconfirma). **Carrinho**: campo **Cupom** + "Aplicar"
+  → `validarCupom` (mostra desconto e total; erros amigáveis) e o código segue no `criarCheckout`
+  (o checkout reconfirma no servidor). **Admin › Promoções** (`/admin/promocoes`, no grupo *Pedidos*,
+  visível só a Dono/`acesso_financeiro`): tabela paginada/ordenável + busca, criar/editar em modal
+  (validação de tipo/escopo/valor/datas/limite/acumulável), ativar/desativar, **ver detalhes**
+  (`DetalhePromocao` — modal read-only: situação/vigência agora, escopo completo, período legível,
+  usos, acumulável), ver usos, excluir (`ConfirmarExclusao`). Helpers em `lib/api.js` (`validarCupom`,
+  `listar/criar/atualizar/excluirPromocao`).
+  **Refino do form**: valor em R$ usa máscara BRL (`CampoPreco`) e em % tem sufixo "%" + teto 100;
+  escopo por **peça(s)/categoria(s)** com **seletor de busca + múltipla seleção** (`SeletorMulti`,
+  lista com **rolagem** + atalhos "Selecionar todas (filtradas)"/"Limpar"); **prévia** do preço com
+  desconto por peça (`PreviaDesconto`, rola com +10 peças); na tabela, o escopo mostra só os 5
+  primeiros nomes (+"…", lista completa no `title`); datas `datetime-local` com `step=60` e **`min` =
+  agora** (não seleciona passado) + fim ≥ início, enviadas como **ISO com fuso** (`new Date(local)
+  .toISOString()`) p/ o período valer no horário local escolhido; dica legível "dd/mm/aaaa às hh:mm";
+  **limite de usos até 10 dígitos**. `npm run build` (SSG) ok.
+- **2026-06-25** — **Código de compra legível** (`PED-000042`) exibido em **Meus pedidos** (cliente),
+  **Vendas** do admin (coluna + detalhe; vira o título do cartão no mobile) e nas três telas de
+  **retorno do pagamento**. Vem do backend (`pedido.codigo`); onde só há o id na URL (retornos),
+  `lib/pedido.js` (`codigoPedido`) formata igual. `npm run build` (SSG) ok.
+- **2026-06-25** — **Header responsivo** (só layout; design/tokens inalterados). Desktop (≥sm): uma
+  linha alinhada — logo · nav (Início/Vitrine/Encomenda) · conta (Entrar/Criar conta ou Minha
+  conta/Sair) + botão "Meu pedido" (`acento-escuro`). Mobile (<sm): logo + carrinho **compacto**
+  (ícone + badge sobreposto, sem texto) + **hambúrguer** que abre um painel com **navegação + conta**;
+  fecha no Esc, clique fora e ao escolher item (`aria-expanded`/`aria-controls`, foco visível). Sem
+  overflow/quebra em ~320–380px; sticky + backdrop-blur mantidos. `npm run build` (SSG) ok.
+- **2026-06-25** — **Rebrand para "Ateliê da Sete"** (Roupas & Artigos Religiosos — Umbanda +
+  Candomblé, Campo Grande/MS, dona Gabrielly Liberato). Trocados **só copy/marca/contexto** (design
+  intacto): nome/tagline em `config/site.js` (+ FAQ de 6 itens e depoimentos placeholder das copys),
+  todas as seções da **Home** reescritas conforme `COPYS_HOME.md` (Hero, Alguns trabalhos, manifesto,
+  O que costuramos, Diferenciais, Depoimentos, FAQ, CTA — CTAs de WhatsApp com a microcopy nova),
+  SEO/`meta.js` (titles/descriptions por rota) e JSON-LD (ClothingStore + FAQPage), `index.html`
+  `<title>`, footer (NAP + "Feito com axé… Saravá as Sete Linhas"), e os textos de marca em Header,
+  AdminLayout, Login, retornos de pagamento, DetalhePeca e Apresentacao. Regras de copy respeitadas
+  ("conforme o fundamento da sua casa"; sem termos proibidos). `npm run build` (SSG) ok.
+- **2026-06-25** — **Paginação estendida aos detalhes do Resumo e à vitrine pública.** Os modais de
+  detalhe das métricas do Dashboard agora paginam (10/página, `DetalheLista` reusando `usePaginacao`
+  + `Paginacao`). A **vitrine** (`/vitrine`) ganhou paginação **server-side** (novo hook
+  `usePecasPaginadas` que devolve `{itens,total}`; passa `page` ao backend; controles `Paginacao`,
+  20/página; volta à página 1 ao mudar busca/categoria) — antes mostrava só os 20 primeiros. `usePecas`
+  (array) segue intacto para a Home. `npm run build` (SSG) ok.
+- **2026-06-25** — **Paginação na UI (10/página) em TODAS as tabelas do admin** (Peças, Estoque,
+  Categorias [2 tabelas], Cores, Destaques, Encomendas, Vendas, Funcionários). Novos `hooks/
+  usePaginacao.js` + `components/admin/Paginacao.jsx` (reutilizáveis; desktop + cartões mobile),
+  aplicados **após** busca/filtro/ordenação, voltando à página 1 ao mudar o filtro; "selecionar
+  todos" = página atual (exclusão em massa intacta). Os hooks do admin continuam agregando todas as
+  páginas do backend; só a renderização é fatiada. Backend de paginação **verificado** (`/api/pecas/`
+  → `count/next/previous/results`, 20/página) — vitrine pública inalterada. `npm run build` (SSG) ok.
+- **2026-06-25** — **Resumo (Dashboard) reorganizado e enriquecido** (mantendo `recharts`): a caixa
+  **"Pergunte ao painel"** subiu para o topo (em destaque); **cartões de métrica** ganharam ícone
+  lucide + número destacado e agora **abrem um `Modal` de detalhe** (lista das peças/variações/
+  categorias/encomendas/pedidos da métrica, com selos e texto truncado + link "Abrir a página
+  completa") em vez de navegar. **Gráficos com números visíveis** (`LabelList` nas barras; total no
+  centro da rosca + legenda com valores) e **altura responsiva** no mobile (`h-56 sm:h-64 lg:h-72`),
+  eixos mais enxutos. Regra de papel/financeiro intacta (cartões/queries de Vendas só com
+  `podeFinanceiro`). `npm run build` (SSG) ok.
+- **2026-06-25** — **Conta de cliente com login** (checkout passa a exigir conta). Nova sessão de
+  cliente **separada do admin**: `context/ContaContext.jsx` (`useConta` + guarda `RotaCliente`),
+  cofre de tokens `tokensCliente` e `auth:"cliente"` em `lib/api.js` (helpers `contaCadastro`/
+  `contaLogin`/`contaMe`/`contaAtualizar`/`contaTrocarSenha`/`contaPedidos`). Novas páginas públicas
+  `pages/conta/{Cadastro,Login,MinhaConta,MeusPedidos}.jsx` (validação completa, máscaras/validação
+  de CPF/telefone em `lib/cpf.js`+`lib/telefone.js`, placeholders "Ex:", estados, mensagens PT-BR).
+  `Header` mostra Entrar/Criar conta × Minha conta/Sair. **`Carrinho`** deixou de coletar nome/contato
+  — exige login (CTA p/ `/conta/login?next=/carrinho`) e usa os dados da conta; `criarCheckout({itens})`
+  agora vai com a auth do cliente. `Encomenda` passou a reusar `lib/telefone.js`. `ContaProvider`
+  somado ao `Providers`. `npm run build` (SSG) ok. Sem mexer no admin nem na Encomenda (fluxo WhatsApp).
 - **2026-06-25** — **Tabelas do admin viram cartões no mobile** (desktop intacto), de forma
   reutilizável: a `<table>` recebe `tabela-cartoes` e cada `<td>` anota `data-rotulo="…"` +
   `cel-principal`/`cel-selecao`/`cel-acoes`; o CSS em `index.css` (`@media max-width:639px`) empilha

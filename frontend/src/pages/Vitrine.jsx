@@ -1,18 +1,23 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { usePecas } from "../hooks/usePecas";
+import { usePecasPaginadas } from "../hooks/usePecas";
 import Filtro from "../components/Filtro";
 import PecaCard from "../components/PecaCard";
+import { Paginacao } from "../components/admin/Paginacao";
 import { Erro, Vazio, GradeSkeleton } from "../components/Estado";
 import { SITE } from "../config/site";
 import { useSeo } from "../seo/useSeo";
 import { getMeta } from "../seo/meta";
+
+// Tamanho de página do backend (PageNumberPagination, PAGE_SIZE=20).
+const PECAS_POR_PAGINA = 20;
 
 export default function Vitrine() {
   useSeo(getMeta("/vitrine"));
   const [busca, setBusca] = useState("");
   const [buscaDebounced, setBuscaDebounced] = useState("");
   const [categoria, setCategoria] = useState("");
+  const [pagina, setPagina] = useState(1);
 
   // Espera o usuário parar de digitar antes de consultar a API.
   useEffect(() => {
@@ -20,19 +25,34 @@ export default function Vitrine() {
     return () => clearTimeout(t);
   }, [busca]);
 
+  // Volta à página 1 quando busca/categoria mudam (a paginação reflete o filtro).
+  useEffect(() => {
+    setPagina(1);
+  }, [buscaDebounced, categoria]);
+
   const {
-    data: pecas,
+    data,
     isLoading, // só true no primeiro carregamento (sem dados anteriores)
     isError,
     error,
     refetch,
     isFetching,
     isPlaceholderData, // true enquanto mostra resultados antigos durante a troca de filtro
-  } = usePecas({
+  } = usePecasPaginadas({
     search: buscaDebounced,
     categoria,
     ordering: "-criado_em",
+    page: pagina,
   });
+
+  const pecas = data?.itens ?? [];
+  const total = data?.total ?? 0;
+  const totalPaginas = Math.max(1, Math.ceil(total / PECAS_POR_PAGINA));
+
+  function irParaPagina(p) {
+    setPagina(p);
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
   // Feedback sutil: enquanto busca a nova consulta, mantém o conteúdo com leve opacidade.
   const atualizando = isPlaceholderData || (isFetching && !isLoading);
@@ -66,17 +86,27 @@ export default function Vitrine() {
         )}
 
         {!isLoading && !isError && pecas.length > 0 && (
-          <div
-            aria-busy={atualizando}
-            className={
-              "grid grid-cols-2 gap-4 transition-opacity duration-200 sm:grid-cols-3 lg:grid-cols-4 " +
-              (atualizando ? "opacity-60" : "opacity-100")
-            }
-          >
-            {pecas.map((peca) => (
-              <PecaCard key={peca.id} peca={peca} />
-            ))}
-          </div>
+          <>
+            <div
+              aria-busy={atualizando}
+              className={
+                "grid grid-cols-2 gap-4 transition-opacity duration-200 sm:grid-cols-3 lg:grid-cols-4 " +
+                (atualizando ? "opacity-60" : "opacity-100")
+              }
+            >
+              {pecas.map((peca) => (
+                <PecaCard key={peca.id} peca={peca} />
+              ))}
+            </div>
+            <Paginacao
+              pagina={pagina}
+              totalPaginas={totalPaginas}
+              total={total}
+              porPagina={PECAS_POR_PAGINA}
+              aoMudar={irParaPagina}
+              rotuloItens="peças"
+            />
+          </>
         )}
       </div>
 

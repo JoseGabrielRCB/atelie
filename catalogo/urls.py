@@ -7,7 +7,13 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
     CategoriaViewSet,
     CheckoutView,
+    ContaCadastroView,
+    ContaLoginView,
+    ContaMeView,
+    ContaPedidosView,
+    ContaSenhaView,
     CorViewSet,
+    CupomValidarView,
     EncomendaViewSet,
     ImagemViewSet,
     LoginView,
@@ -15,6 +21,7 @@ from .views import (
     MudarSenhaView,
     PecaViewSet,
     PedidoViewSet,
+    PromocaoViewSet,
     UsuarioViewSet,
     VariacaoViewSet,
     WebhookMercadoPagoView,
@@ -33,7 +40,9 @@ router.register("variacoes", VariacaoViewSet, basename="variacao")
 router.register("imagens", ImagemViewSet, basename="imagem")
 router.register("encomendas", EncomendaViewSet, basename="encomenda")
 router.register("pedidos", PedidoViewSet, basename="pedido")
+router.register("promocoes", PromocaoViewSet, basename="promocao")
 router.register("usuarios", UsuarioViewSet, basename="usuario")
+router.register("conta/pedidos", ContaPedidosView, basename="conta-pedido")
 
 urlpatterns = [
     path("auth/login/", LoginView.as_view(), name="login"),
@@ -41,7 +50,13 @@ urlpatterns = [
     # Identidade do usuário logado + troca da própria senha.
     path("me/", MeView.as_view(), name="me"),
     path("me/senha/", MudarSenhaView.as_view(), name="me-senha"),
+    # Conta do CLIENTE da loja (separada do staff).
+    path("conta/cadastro/", ContaCadastroView.as_view(), name="conta-cadastro"),
+    path("conta/login/", ContaLoginView.as_view(), name="conta-login"),
+    path("conta/me/", ContaMeView.as_view(), name="conta-me"),
+    path("conta/senha/", ContaSenhaView.as_view(), name="conta-senha"),
     path("checkout/", CheckoutView.as_view(), name="checkout"),
+    path("cupom/validar/", CupomValidarView.as_view(), name="cupom-validar"),
     path(
         "webhooks/mercadopago/",
         WebhookMercadoPagoView.as_view(),
