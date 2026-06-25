@@ -402,3 +402,49 @@ export const whatsappDesconectar = () =>
 export const whatsappDono = () => request("/whatsapp/dono/", { auth: true });
 export const atualizarWhatsappDono = (numero) =>
   request("/whatsapp/dono/", { method: "PATCH", body: { numero }, auth: true });
+
+// ----------------------------------------------------------------------------
+// Contas do painel — identidade, troca de senha e gestão de funcionários.
+// As permissões são forçadas no backend; o front só decide o que mostrar.
+// ----------------------------------------------------------------------------
+// Identidade do usuário logado: { usuario, nome, papel, ativo, senha_provisoria, acesso_financeiro }.
+export const obterMe = () => request("/me/", { auth: true });
+
+// Troca da própria senha (limpa senha_provisoria no backend).
+export const mudarSenha = (senha_atual, nova_senha) =>
+  request("/me/senha/", {
+    method: "POST",
+    body: { senha_atual, nova_senha },
+    auth: true,
+  });
+
+// Lista TODOS os funcionários (só Dono), percorrendo a paginação.
+export async function listarUsuarios() {
+  let url = "/usuarios/";
+  const todos = [];
+  let guarda = 0;
+  while (url && guarda < 100) {
+    const pagina = await request(url, { auth: true });
+    if (Array.isArray(pagina)) {
+      todos.push(...pagina);
+      url = null;
+    } else {
+      todos.push(...(pagina.results ?? []));
+      if (pagina.next) {
+        const u = new URL(pagina.next);
+        url = u.pathname.replace(/^\/api/, "") + u.search;
+      } else {
+        url = null;
+      }
+    }
+    guarda += 1;
+  }
+  return todos;
+}
+
+export const criarUsuario = (dados) =>
+  request("/usuarios/", { method: "POST", body: dados, auth: true });
+export const atualizarUsuario = (id, dados) =>
+  request(`/usuarios/${id}/`, { method: "PATCH", body: dados, auth: true });
+export const excluirUsuario = (id) =>
+  request(`/usuarios/${id}/`, { method: "DELETE", auth: true });

@@ -19,6 +19,7 @@ import { useAdminPecas } from "../../hooks/useAdminPecas";
 import { useAdminEncomendas } from "../../hooks/useAdminEncomendas";
 import { useAdminPedidos } from "../../hooks/useAdminPedidos";
 import { responderPergunta } from "../../lib/perguntas";
+import { useAuth } from "../../context/AuthContext";
 import { Carregando, Erro } from "../../components/Estado";
 import { inputClasse } from "../../components/admin/ui";
 
@@ -71,10 +72,12 @@ function PainelGrafico({ titulo, children, vazio }) {
 }
 
 export default function Dashboard() {
+  const { podeFinanceiro } = useAuth();
   const pecasQ = useAdminPecas();
   const catQ = useQuery({ queryKey: ["categorias"], queryFn: listarCategorias });
   const encomendasQ = useAdminEncomendas();
-  const pedidosQ = useAdminPedidos();
+  // Vendas/financeiro só é buscado para quem tem acesso (evita 403 do funcionário).
+  const pedidosQ = useAdminPedidos({}, { enabled: podeFinanceiro });
 
   const pecas = useMemo(() => pecasQ.data ?? [], [pecasQ.data]);
   const categoriasLista = useMemo(
@@ -169,20 +172,25 @@ export default function Dashboard() {
           valor={encomendasNovas}
           destaque={encomendasNovas > 0}
         />
-        <Link
-          to="/admin/vendas"
-          className="rounded-lg border border-borda bg-superficie p-5 transition hover:border-acento-escuro focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-escuro"
-        >
-          <p className="text-sm text-texto-suave">Vendas pagas (mês)</p>
-          <p className="mt-1 font-display text-3xl font-semibold text-texto">
-            {vendasPagasMes}
-          </p>
-        </Link>
-        <Cartao
-          titulo="Pedidos aguardando pagamento"
-          valor={pedidosAguardando}
-          destaque={pedidosAguardando > 0}
-        />
+        {/* Cartões de Vendas/financeiro: só para Dono ou funcionário liberado. */}
+        {podeFinanceiro && (
+          <>
+            <Link
+              to="/admin/vendas"
+              className="rounded-lg border border-borda bg-superficie p-5 transition hover:border-acento-escuro focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-escuro"
+            >
+              <p className="text-sm text-texto-suave">Vendas pagas (mês)</p>
+              <p className="mt-1 font-display text-3xl font-semibold text-texto">
+                {vendasPagasMes}
+              </p>
+            </Link>
+            <Cartao
+              titulo="Pedidos aguardando pagamento"
+              valor={pedidosAguardando}
+              destaque={pedidosAguardando > 0}
+            />
+          </>
+        )}
       </div>
 
       {/* ---- Gráficos ---- */}

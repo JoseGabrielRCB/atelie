@@ -2,7 +2,7 @@
 
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.views import TokenRefreshView
 
 from .views import (
     CategoriaViewSet,
@@ -10,8 +10,12 @@ from .views import (
     CorViewSet,
     EncomendaViewSet,
     ImagemViewSet,
+    LoginView,
+    MeView,
+    MudarSenhaView,
     PecaViewSet,
     PedidoViewSet,
+    UsuarioViewSet,
     VariacaoViewSet,
     WebhookMercadoPagoView,
     WhatsappConectarView,
@@ -29,10 +33,14 @@ router.register("variacoes", VariacaoViewSet, basename="variacao")
 router.register("imagens", ImagemViewSet, basename="imagem")
 router.register("encomendas", EncomendaViewSet, basename="encomenda")
 router.register("pedidos", PedidoViewSet, basename="pedido")
+router.register("usuarios", UsuarioViewSet, basename="usuario")
 
 urlpatterns = [
-    path("auth/login/", TokenObtainPairView.as_view(), name="login"),
+    path("auth/login/", LoginView.as_view(), name="login"),
     path("auth/refresh/", TokenRefreshView.as_view(), name="refresh"),
+    # Identidade do usuário logado + troca da própria senha.
+    path("me/", MeView.as_view(), name="me"),
+    path("me/senha/", MudarSenhaView.as_view(), name="me-senha"),
     path("checkout/", CheckoutView.as_view(), name="checkout"),
     path(
         "webhooks/mercadopago/",

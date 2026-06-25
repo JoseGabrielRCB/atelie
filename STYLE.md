@@ -10,6 +10,78 @@
 - **Mas legível e com destaque claro.** Minimalismo não é falta de contraste: texto tem que ler fácil e as ações (carrinho, comprar) têm que saltar aos olhos.
 - **Mobile-first.** Primeiro o celular, depois o desktop.
 
+## Padronização (regras-padrão para o agente)
+
+> Regras válidas para **todo** o sistema, por padrão — o agente deve segui-las sem precisar ser
+> lembrado a cada tarefa. A seção "Padrões de componente do painel" (mais abaixo) é a **implementação**
+> destas regras no admin.
+
+**Princípios transversais:** "menos cliques possível" (preferir chips/`+`−`/seleção a digitação livre);
+**reaproveitar componentes existentes** (Modal, tabela ordenável, selos) e usar **ícones sempre via
+`lucide-react`** (nunca imagem); formatos **brasileiros** por padrão (`R$ 1.234,56`, datas `dd/mm/aaaa`,
+vírgula decimal).
+
+### Tabelas
+- **Ordenáveis** por qualquer coluna (clique no cabeçalho alterna asc/desc), com a ordenação
+  **persistindo** ao paginar/recarregar.
+- **Paginação** sempre que a lista puder crescer.
+- **Seleção em massa:** selecionar todas (e por linha) para **ações em lote** (ex.: excluir). Ações que
+  só fazem sentido item a item (**ver detalhes**, **editar**) ficam **fora** da seleção em massa.
+- **Texto longo na célula:** truncar com reticências (ex.: "Rua Antônio Emílio de…") e mostrar o
+  conteúdo completo ao passar o mouse (**tooltip**).
+- **No mobile (abaixo de ~640px), a tabela vira lista de cartões** (rótulo: valor), com o campo
+  principal como título e as ações em botões no rodapé do cartão; a ordenação é feita por um controle
+  **"Ordenar por"** (+ inverter asc/desc) no topo da lista; a seleção em massa é por **checkbox no
+  cartão** (a barra "N selecionados / Excluir selecionados" continua igual). **Rolagem horizontal
+  deixa de ser o padrão.** No cartão o valor pode quebrar/encurtar (não precisa de tooltip).
+
+### Campos de preenchimento
+- **Largura média**, proporcional ao dado esperado — nunca um campo gigante para um conteúdo curto.
+- **Preferir entradas controladas:** revisar se o campo pode virar **botões de opção/chips** (poucas
+  opções) ou **lista suspensa** (muitas). Se a lista puder ser alimentada por uma **API** (ex.:
+  endereço por CEP), **consultar o dono antes** de adicionar a dependência.
+- **Placeholder de exemplo** quando vazio: no formato **"Ex: …"**, em **itálico** e com cor **mais
+  suave** (menor contraste) que o texto digitado — para nunca se confundir com um valor preenchido.
+- **Validação contínua e contextual**, em tempo real: filtrar a digitação conforme o tipo
+  (telefone/CPF não aceitam letras; campos numéricos não aceitam texto) e indicar **na hora** se o
+  campo já está **válido** ou ainda **incorreto**.
+- **Máscara automática** conforme o contexto, formatando enquanto se digita: moeda `R$ XX,XX`,
+  telefone `(67) 99999-9999`, CPF, CEP, data.
+
+### Formulários
+- **Abrem em modal**, sem tirar o usuário da página. *(Exceção: fluxos que avançam de etapa, como o
+  checkout de pagamento.)*
+- **Sempre completos** — nunca em partes ocultas que só aparecem depois de preencher um trecho.
+- **Botões ao final**, de forma intuitiva: ação principal (Salvar/Enviar/Criar, conforme o contexto)
+  + **Cancelar**.
+- **Confirmação ao concluir:** mensagem clara de que foi **salvo/enviado**.
+- Validar **todos** os campos de uma vez (erros inline por campo + resumo) — nunca um erro de cada vez.
+
+### Ações destrutivas (exclusão)
+- Nunca usar o popup do navegador. Sempre um **modal** que **lista exatamente o que será removido**
+  (incluindo o que cai em **cascata**), avisa que é **irreversível** e pede confirmação explícita.
+- Em **exclusão múltipla**, agrupar a lista **por item**; quando houver cascata, confirmação
+  **reforçada** marcando um **checkbox** "Entendo que esta ação é irreversível" (sem precisar
+  digitar nada). Botão de confirmar sólido em `erro`.
+
+### Visualizar × editar
+- **Visualizar é só-leitura** (sem inputs). Editar é uma ação **separada e explícita** (lápis/botão).
+  Não usar o "olho" para abrir o formulário de edição.
+
+### Feedback e estados
+- Botões de ação mostram progresso ("Salvando…") e ficam **desabilitados durante a ação** — evita
+  clique duplo / envio duplicado.
+- Toda tela que carrega dados tem **três estados**: **carregando** (skeleton), **vazio** (mensagem) e
+  **erro** (mensagem amigável + "Tentar novamente").
+
+### Erros (mensagens)
+- **Para o usuário:** linguagem simples, **sem termos técnicos nem inglês** — explicação curta do que
+  houve e o que fazer.
+  - ❌ Ruim: "Evolution não está funcionando." (o usuário não sabe o que é "Evolution".)
+  - ✅ Bom: "O sistema está fora do ar no momento. Tente novamente em instantes ou contate o suporte."
+- **Para o desenvolvedor:** o erro técnico e específico continua **nos logs do backend** (status,
+  causa, stack) — só não aparece para o usuário final.
+
 ## Paleta de cores (revisada para mais contraste — 19/06/2026)
 
 | Token | Hex | Uso |
@@ -140,16 +212,37 @@ Mesma identidade, porém **mais utilitário**: foco em tabelas e formulários cl
 
 ### Padrões de componente do painel
 
+> Implementação no admin das regras da seção **Padronização** (acima). Em conflito, vale a Padronização.
+
 - **Modal (pop-up):** formulários de **criar e editar** (nova peça, editar peça, nova categoria)
   abrem em **modal** sobre a tela atual — nunca navegam para outra página. Visual: superfície
   branca, borda `borda`, cantos 8px,
   sombra suave, fundo escurecido (`bg-black/40`) atrás. Acessível: foco preso dentro, fecha no
   `Esc` e no clique fora, `role="dialog"` + `aria-modal`, devolve o foco ao fechar. Botão "X" de
   fechar no topo (ícone lucide). Componente único reutilizável (`components/admin/Modal.jsx`).
+- **Navegação agrupada (menu do painel):** a barra do admin tem **5 itens de topo** — Resumo (link
+  direto), **Catálogo ▾** (Peças/Categorias/Cores/Destaques), Estoque (link direto), **Pedidos ▾**
+  (Encomendas/Vendas) e **Configurações ▾** (Funcionários/WhatsApp) — num componente único
+  (`components/admin/AdminNav.jsx`). Itens com submenu mostram um `ChevronDown` (lucide). **Desktop:**
+  o dropdown abre por **hover + clique + foco do teclado** (nunca só hover); fecha ao tirar o mouse
+  (atraso ~150ms), no `Esc` e ao clicar fora; o item de topo fica em estado **ativo** (`acento-escuro`)
+  quando a rota atual é uma das filhas. Painel do submenu em `superficie`/`borda`, cantos 8px, sombra
+  suave. **Mobile:** sem hover — botão **hambúrguer** abre um menu **sanfona** (accordion) por grupo.
+  Acessível: `aria-haspopup="menu"`/`aria-expanded`, `role="menu"`/`menuitem`, navegação por teclado
+  (Tab/Enter/Esc/setas), foco visível (anel `acento-escuro`); os itens são **links de verdade**
+  (`NavLink`). **Visibilidade por papel** (UI; o backend reforça): Funcionário vê Resumo/Catálogo/
+  Estoque/Pedidos (Vendas só com `acesso_financeiro`); Dono vê tudo (inclui Configurações). Grupo sem
+  itens para o papel **some** do menu.
 - **Tabela ordenável:** qualquer tabela do admin pode ser ordenada por qualquer coluna — clicar no
   cabeçalho alterna asc/desc, com **seta** (ícone lucide) indicando a coluna/direção ativa. A
   ordenação **persiste** ao paginar/recarregar (guardada por tabela em `localStorage`). Cabeçalho
   reutilizável (`CabecalhoOrdenavel`) + hook `useOrdenacao`.
+- **Tabela → cartões no mobile:** a transformação é única e reutilizável. A `<table>` recebe a classe
+  **`tabela-cartoes`** e cada `<td>` declara seu rótulo via **`data-rotulo="…"`**; células marcadas
+  com **`cel-principal`** (título), **`cel-selecao`** (checkbox no canto) e **`cel-acoes`** (botões no
+  rodapé). Abaixo de 640px, o CSS em `index.css` empilha tudo em cartões (a lógica mora só no CSS — as
+  páginas só anotam os `td`). A ordenação no mobile usa o componente **`OrdenarMobile`** (mesmo
+  `useOrdenacao`), e o contêiner da tabela só mostra borda/scroll a partir de `sm:` (640px).
 - **Ícones:** sempre **componentes** do `lucide-react` (`Plus`, `Minus`, `Pencil`, `Trash2`, `Eye`,
   `Check`, `X`…), nunca `<img>` de ícone nem SVG colado como imagem. Tamanho ~14–20px, herdam a
   cor do texto. Decorativos com `aria-hidden`; ações só-ícone com `aria-label`.
@@ -161,9 +254,9 @@ Mesma identidade, porém **mais utilitário**: foco em tabelas e formulários cl
   (`ConfirmarExclusao`) abre um modal que **lista tudo o que será removido, agrupado por item**
   (cada item-pai com seus dependentes em cascata aninhados) e um **total** ao final; a ação é sempre
   marcada como **irreversível**. Quando a exclusão envolve **cascata** (categorias/peças), a
-  confirmação é **reforçada**: digitar o nome do item (exclusão única) ou a palavra `EXCLUIR`
-  (em massa). O botão de confirmar é **sólido em `erro`** (branco), com `Trash2`.
-- **Seleção em massa:** tabelas do admin (Peças, Estoque, Categorias, Encomendas) têm **checkbox por
+  confirmação é **reforçada** com um **checkbox** "Entendo que esta ação é irreversível" — **não**
+  é preciso digitar nada. O botão de confirmar é **sólido em `erro`** (branco), com `Trash2`.
+- **Seleção em massa:** tabelas do admin (Peças, Estoque, Categorias, Cores, Encomendas) têm **checkbox por
   linha** + **"selecionar todos"** no cabeçalho (respeita filtro/busca; estado indeterminado quando
   parcial). Com ≥1 selecionado aparece uma **barra de ação** (borda/fundo `erro` suave) com "N
   selecionado(s)", "Excluir selecionados" (vermelho) e "Limpar seleção". A exclusão roda item a item
@@ -233,3 +326,24 @@ Mesma identidade, porém **mais utilitário**: foco em tabelas e formulários cl
   (confirmação = webhook). Catálogo usa `disponivel` (estoque real) para "Esgotado" e limites.
 - 21/06/2026 — Padrões novos do painel: **paleta de cores** para variações (`SeletorCor` + seção `/admin/cores`, picker `react-colorful`, persiste `cor`+`cor_hex`); **máscara de moeda BRL** com teto R$ 1.000.000 (`CampoPreco`); **contadores de caracteres** (nome 80 / descrição 600); **validação completa** (todos os erros de uma vez, inline + resumo); **olho = só leitura** vs **lápis = editar**; **gráficos do Dashboard** (`recharts`) com a paleta dos tokens (admin-only, fora do SSG).
 - 22/06/2026 — Seção **Vendas** (`/admin/vendas`) só-leitura: tabela ordenável dos pedidos do pagamento online (Mercado Pago) com filtro por status e modal de detalhe (cliente, total/datas, itens, IDs do MP). Sem editar/excluir; nota de que estorno/cancelamento são no painel do MP. Selos `pago`→verde / `aguardando_pagamento`→acento / `expirado`→cinza / `cancelado`→vermelho. Dois cartões de venda no Dashboard. Atualizada a regra antiga "sem telas de venda" do painel.
+- 22/06/2026 — Adicionada a seção **Padronização** (regras-padrão do sistema): Tabelas, Campos, Formulários, Ações destrutivas, Visualizar×editar, Feedback/estados e Erros, mais princípios transversais (menos cliques, reuso de componentes/ícones lucide, formatos BR). A seção "Padrões de componente do painel" passou a ser a implementação dela. (Regras de engenharia — validação no servidor e segredos/dados sensíveis — ficam no `CLAUDE.md`.)
+- 25/06/2026 — **Tabelas responsivas do admin**: abaixo de 640px cada linha vira um **cartão**
+  (rótulo: valor; título = campo principal; ações em botões; checkbox no canto). Transformação única
+  via classe `tabela-cartoes` + `data-rotulo`/`cel-principal`/`cel-selecao`/`cel-acoes` (CSS em
+  `index.css`) e controle **`OrdenarMobile`** (reusa `useOrdenacao`). Desktop intacto; rolagem
+  horizontal deixou de ser o padrão (só a partir de `sm:`). Aplicado às 8 tabelas do painel.
+- 25/06/2026 — **Navegação agrupada do painel**: 5 itens de topo (Resumo, Catálogo ▾, Estoque,
+  Pedidos ▾, Configurações ▾) num `AdminNav` único — dropdown por hover+clique+teclado no desktop
+  (fecha com atraso ~150ms / Esc / clique fora; topo ativo destacado) e sanfona no hambúrguer no
+  mobile; visibilidade por papel; acessível (`aria-haspopup`/`expanded`, `role=menu/menuitem`,
+  teclado, foco visível). Só navegação — rotas/telas/permissões intactas.
+- 24/06/2026 — **Auditoria de conformidade** das telas (admin + cliente) à Padronização. Desvios
+  corrigidos: removidos TODOS os resíduos de `window.confirm` (variação/imagem na edição de peça e
+  encomenda no modal passaram a usar `ConfirmarExclusao`; **trocar WhatsApp do dono** e **desconectar
+  o WhatsApp** passaram a usar um **modal de confirmação genérico** reutilizando `Modal` — padrão
+  novo para confirmações que **não** são exclusão); placeholders de exemplo agora em **itálico + cor
+  mais suave** (`placeholder:italic placeholder:text-texto-suave/70`, no `inputClasse` do admin e nos
+  inputs do cliente) e no formato "Ex.: …"; **truncamento + tooltip** (`title`) nas células de
+  Cliente em Encomendas/Vendas e Peça em Peças; rótulos do painel de WhatsApp sem jargão ("Evolution"
+  → "serviço"); telas de retorno do pagamento não afirmam aprovação por query param ("Pagamento
+  aprovado!" → "Pedido recebido!", confirmação é via webhook). O restante das telas já estava conforme.

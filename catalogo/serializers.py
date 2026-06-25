@@ -1,7 +1,11 @@
 """Serializers da API do catálogo."""
 
+from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from .models import (
     HEX_COR_VALIDATOR,
@@ -13,8 +17,12 @@ from .models import (
     ItemPedido,
     Peca,
     Pedido,
+    Perfil,
     Variacao,
 )
+from .permissions import perfil_efetivo
+
+User = get_user_model()
 
 # Teto de preço aceito (em reais). Acima disso, provavelmente é erro de digitação.
 PRECO_MAXIMO = 1000000
@@ -349,3 +357,116 @@ class PedidoSerializer(serializers.ModelSerializer):
             "itens",
         ]
         read_only_fields = fields
+
+
+# --------------------------------------------------------------------------
+# Contas do painel — papéis (Dono/Funcionário), login com claims e senha
+# --------------------------------------------------------------------------
+
+
+def _claims_de(user):
+    """Claims de papel para o JWT (o front decide o que mostrar; o backend manda)."""
+    perfil = perfil_efetivo(user)
+    if perfil is None:
+        return {"papel": None, "acesso_financeiro": False}
+    # acesso_financeiro = o interruptor por conta (cru). O front deriva o acesso
+    # efetivo a Vendas como: papel == "dono" OU acesso_financeiro.
+    return {"papel": perfil.papel, "acesso_financeiro": perfil.acesso_financeiro}
+
+
+class TokenComPapelSerializer(TokenObtainPairSerializer):
+    """Login JWT que injeta ``papel``/``acesso_financeiro`` nas claims e bloqueia
+    contas inativas (perfil ``ativo=False``)."""
+
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+        for chave, valor in _claims_de(user).items():
+            token[chave] = valor
+        return token
+
+    def validate(self, attrs):
+        # super() autentica e já barra usuários com User.is_active=False.
+        data = super().validate(attrs)
+        if perfil_efetivo(self.user) is None:
+            raise serializers.ValidationError(
+                "Sua conta está inativa. Fale com o responsável pelo ateliê."
+            )
+        return data
+
+
+class UsuarioSerializer(serializers.ModelSerializer):
+    """Leitura de um funcionário (lista/detalhe para o Dono)."""
+
+    nome = serializers.CharField(source="first_name", read_only=True)
+    usuario = serializers.CharField(source="username", read_only=True)
+    papel = serializers.CharField(source="perfil.papel", read_only=True)
+    ativo = serializers.BooleanField(source="perfil.ativo", read_only=True)
+    acesso_financeiro = serializers.BooleanField(
+        source="perfil.acesso_financeiro", read_only=True
+    )
+    senha_provisoria = serializers.BooleanField(
+        source="perfil.senha_provisoria", read_only=True
+    )
+    criado_em = serializers.DateTimeField(source="perfil.criado_em", read_only=True)
+
+    class Meta:
+        model = User
+        fields = [
+            "id",
+            "nome",
+            "usuario",
+            "email",
+            "papel",
+            "ativo",
+            "acesso_financeiro",
+            "senha_provisoria",
+            "criado_em",
+        ]
+        read_only_fields = fields
+
+
+class UsuarioCreateSerializer(serializers.Serializer):
+    """Criação de um funcionário com senha provisória definida pelo Dono."""
+
+    nome = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    usuario = serializers.CharField(max_length=150)
+    email = serializers.EmailField(required=False, allow_blank=True)
+    senha = serializers.CharField(write_only=True)
+    acesso_financeiro = serializers.BooleanField(required=False, default=False)
+
+    def validate_usuario(self, value):
+        value = (value or "").strip()
+        if not value:
+            raise serializers.ValidationError("Informe um nome de usuário.")
+        if User.objects.filter(username__iexact=value).exists():
+            raise serializers.ValidationError("Já existe um usuário com esse nome.")
+        return value
+
+    def validate_email(self, value):
+        value = (value or "").strip()
+        if value and User.objects.filter(email__iexact=value).exists():
+            raise serializers.ValidationError("Já existe um usuário com esse e-mail.")
+        return value
+
+    def validate_senha(self, value):
+        try:
+            validate_password(value)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(list(exc.messages))
+        return value
+
+
+class MudarSenhaSerializer(serializers.Serializer):
+    """Troca da própria senha (qualquer usuário logado)."""
+
+    senha_atual = serializers.CharField(write_only=True)
+    nova_senha = serializers.CharField(write_only=True)
+
+    def validate_nova_senha(self, value):
+        user = self.context["request"].user
+        try:
+            validate_password(value, user)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(list(exc.messages))
+        return value

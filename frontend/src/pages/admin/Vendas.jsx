@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Eye } from "lucide-react";
 import { useAdminPedidos } from "../../hooks/useAdminPedidos";
 import { useOrdenacao, ordenarPor } from "../../hooks/useOrdenacao";
-import { CabecalhoOrdenavel } from "../../components/admin/CabecalhoOrdenavel";
+import { CabecalhoOrdenavel, OrdenarMobile } from "../../components/admin/CabecalhoOrdenavel";
 import Modal from "../../components/admin/Modal";
 import Preco from "../../components/Preco";
 import { obterPedido } from "../../lib/api";
@@ -114,8 +114,21 @@ export default function Vendas() {
       )}
 
       {lista.length > 0 && (
-        <div className="overflow-x-auto rounded-lg border border-borda">
-          <table className="w-full text-left text-sm">
+        <>
+        <OrdenarMobile
+          className="mb-3"
+          ordenacao={ord.ordenacao}
+          aoOrdenar={ord.alternar}
+          colunas={[
+            { coluna: "nome", rotulo: "Cliente" },
+            { coluna: "itens", rotulo: "Itens" },
+            { coluna: "total", rotulo: "Total" },
+            { coluna: "status", rotulo: "Status" },
+            { coluna: "criado_em", rotulo: "Data" },
+          ]}
+        />
+        <div className="sm:overflow-x-auto sm:rounded-lg sm:border sm:border-borda">
+          <table className="tabela-cartoes w-full text-left text-sm">
             <thead className="border-b border-borda text-texto-suave">
               <tr>
                 <CabecalhoOrdenavel coluna="nome" rotulo="Cliente" ordenacao={ord.ordenacao} aoOrdenar={ord.alternar} />
@@ -135,20 +148,24 @@ export default function Vendas() {
                     onClick={() => setDetalheId(p.id)}
                     className="cursor-pointer transition hover:bg-borda/30"
                   >
-                    <td className="px-4 py-3 font-medium text-texto">{p.nome}</td>
-                    <td className="px-4 py-3 text-texto-suave">
+                    <td className="cel-principal px-4 py-3 font-medium text-texto">
+                      <span className="block max-w-[16rem] truncate" title={p.nome}>
+                        {p.nome}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-texto-suave" data-rotulo="Itens">
                       {n} {n === 1 ? "item" : "itens"}
                     </td>
-                    <td className="px-4 py-3 text-texto">
+                    <td className="px-4 py-3 text-texto" data-rotulo="Total">
                       <Preco valor={p.total} />
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" data-rotulo="Status">
                       <Selo cor={STATUS[p.status]?.cor ?? "neutro"}>
                         {rotuloStatus(p.status)}
                       </Selo>
                     </td>
-                    <td className="px-4 py-3 text-texto-suave">{dataCurta(p.criado_em)}</td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 text-texto-suave" data-rotulo="Data">{dataCurta(p.criado_em)}</td>
+                    <td className="cel-acoes px-4 py-3">
                       <div className="flex justify-end">
                         <button
                           type="button"
@@ -169,6 +186,7 @@ export default function Vendas() {
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       <Modal

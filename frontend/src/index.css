@@ -32,3 +32,101 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
+
+/*
+  Tabelas responsivas do admin (padrão único, reutilizável).
+  Desktop (>=640px): <table> normal. Mobile (<640px): cada <tr> vira um cartão
+  empilhado "rótulo: valor". Cada <td> declara o rótulo via data-rotulo="...";
+  células marcadas com as classes:
+    .cel-principal → título do cartão (sem rótulo)
+    .cel-selecao   → checkbox no canto superior direito (sem rótulo)
+    .cel-acoes     → botões de ação no rodapé do cartão (sem rótulo)
+  Toda a lógica do "vira cartão" mora aqui — as páginas só anotam os td.
+*/
+@media (max-width: 639px) {
+  table.tabela-cartoes,
+  table.tabela-cartoes > tbody {
+    display: block;
+    min-width: 0 !important;
+  }
+  table.tabela-cartoes > thead {
+    display: none;
+  }
+  table.tabela-cartoes > tbody > tr {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: 0.75rem;
+    padding: 0.75rem 0.875rem;
+    border: 1px solid var(--color-borda);
+    border-radius: 8px;
+    background: var(--color-superficie);
+  }
+  table.tabela-cartoes > tbody > tr:last-child {
+    margin-bottom: 0;
+  }
+  table.tabela-cartoes > tbody > tr > td {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    width: auto;
+    padding: 0.25rem 0;
+    text-align: right;
+    border: 0;
+    white-space: normal;
+  }
+  table.tabela-cartoes > tbody > tr > td::before {
+    content: attr(data-rotulo);
+    flex-shrink: 0;
+    font-weight: 500;
+    text-align: left;
+    color: var(--color-texto-suave);
+  }
+  /* Valores longos podem quebrar no cartão (sem truncar como na célula). */
+  table.tabela-cartoes > tbody > tr > td .truncate {
+    max-width: none !important;
+    overflow: visible;
+    white-space: normal;
+    text-overflow: clip;
+  }
+  /* Título do cartão = campo principal. */
+  table.tabela-cartoes > tbody > tr > td.cel-principal {
+    display: block;
+    margin-bottom: 0.25rem;
+    padding-right: 2.25rem; /* espaço para o checkbox no canto */
+    padding-bottom: 0.5rem;
+    text-align: left;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--color-texto);
+    border-bottom: 1px solid var(--color-borda);
+  }
+  /* Checkbox de seleção no canto superior direito do cartão. */
+  table.tabela-cartoes > tbody > tr > td.cel-selecao {
+    position: absolute;
+    top: 0.625rem;
+    right: 0.75rem;
+    width: auto;
+    padding: 0;
+  }
+  /* Ações: botões no rodapé do cartão. */
+  table.tabela-cartoes > tbody > tr > td.cel-acoes {
+    display: block;
+    margin-top: 0.25rem;
+    padding-top: 0.625rem;
+    text-align: left;
+    border-top: 1px solid var(--color-borda);
+  }
+  table.tabela-cartoes > tbody > tr > td.cel-principal::before,
+  table.tabela-cartoes > tbody > tr > td.cel-selecao::before,
+  table.tabela-cartoes > tbody > tr > td.cel-acoes::before {
+    content: none;
+  }
+  /* Os contêineres de ações alinham à esquerda e podem quebrar em várias linhas. */
+  table.tabela-cartoes > tbody > tr > td.cel-acoes > * {
+    justify-content: flex-start !important;
+    flex-wrap: wrap;
+  }
+}

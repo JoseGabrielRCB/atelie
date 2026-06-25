@@ -125,6 +125,34 @@ decremente o estoque duas vezes.
 Garante que um reenvio da mesma mensagem do dono não ajuste o estoque duas vezes. Registrado no
 Django Admin como read-only (sem botão de adicionar).
 
+**Perfil** — perfil de acesso ao painel (**OneToOne** com o `User` do Django; **NÃO** trocamos
+`AUTH_USER_MODEL`). Campos: `usuario` (OneToOne→User, `CASCADE`, related_name `perfil`), `papel`
+(`dono` | `funcionario`, default `funcionario`), `ativo` (bool, default True), `acesso_financeiro`
+(bool, default False — libera a seção Vendas para um funcionário), `senha_provisoria` (bool, default
+False — força a troca no próximo acesso), `criado_por` (FK→User, `SET_NULL`, nulo), `criado_em`
+(auto_now_add). Propriedades: `eh_dono`, `pode_financeiro` (dono **ou** `acesso_financeiro`). É o
+MESMO ateliê (não é multi-loja): um Dono gerencia contas de Funcionários. Migrations `0008` (modelo)
+e `0009` (data migration: cria `Perfil(papel='dono')` para superusers existentes — o dono atual não
+perde acesso). Registrado no Django Admin.
+
+### Papéis e permissões (a fonte da verdade é o backend)
+
+`catalogo/permissions.py` lê `request.user.perfil` e expõe os helpers `perfil_efetivo(user)`
+(devolve o `Perfil` ativo, ou `None` se anônimo/inativo; **superuser sem Perfil = Dono virtual
+ativo**, p/ não travar o acesso), `eh_dono(user)` e `pode_financeiro(user)`. Classes de permissão:
+
+- **`LeituraPublicaEscritaEquipe`** — GET livre; escrita exige Dono **ou** Funcionário ativo. Aplicada
+  em `categorias`, `cores`, `pecas`, `variacoes`, `imagens` (catálogo/estoque/categorias/cores/destaques).
+- **`EhEquipeAtiva`** — Dono ou Funcionário ativo. Ações não-públicas de `encomendas` (ver/status/excluir).
+- **`PodeFinanceiro`** — Dono, ou Funcionário com `acesso_financeiro=True`. Aplicada em `pedidos` (Vendas).
+- **`SoDono`** — só Dono (não liberável). Aplicada em `usuarios` e nas Configurações de WhatsApp
+  (`/whatsapp/status|conectar|desconectar|dono`).
+
+Funcionário **inativo** (`ativo=False`) é bloqueado: a desativação sincroniza `User.is_active=False`
+(o `JWTAuthentication` recusa o token) **e** `perfil_efetivo` devolve `None` (permissões negam). O
+login (`TokenComPapelSerializer`) também recusa perfil inativo. Senhas/segredos NUNCA são logados;
+a senha provisória gerada num reset volta UMA vez na resposta (para o Dono repassar).
+
 ### Regras de negócio
 
 1. Variação com `estoque == 0` é sinalizada com `esgotado: true` na API.
@@ -252,12 +280,26 @@ Base: `/api/`. Respostas de lista são **paginadas** (`PageNumberPagination`, `P
     `{ estado, qr_base64, pairing_code, mensagem }`.
   - `POST /api/whatsapp/desconectar/` → logout da instância → `{ ok, mensagem }`.
   - `GET /api/whatsapp/dono/` → `{ numero, configurado }`; `PATCH/PUT /api/whatsapp/dono/` com `{ "numero" }` atualiza `WHATSAPP_DONO`, salva no `.env` e aplica em memória (admin/JWT).
-- `POST /api/auth/login/` — body `{ "username", "password" }` → `{ "access", "refresh" }`.
+- `POST /api/auth/login/` — body `{ "username", "password" }` → `{ "access", "refresh" }`. O token
+  inclui as claims `papel` e `acesso_financeiro` (cru) para o front decidir o que mostrar; o backend
+  reforça as permissões de qualquer forma. Recusa conta inativa.
 - `POST /api/auth/refresh/` — body `{ "refresh" }` → `{ "access" }`.
+
+### Contas do painel (multiusuário)
+
+- `GET /api/me/` (logado) → `{ usuario, nome, papel, ativo, senha_provisoria, acesso_financeiro }`.
+- `POST /api/me/senha/` (logado) — `{ "senha_atual", "nova_senha" }`; troca a própria senha e **limpa**
+  `senha_provisoria`. Valida a senha nova (validadores do Django) e confere a atual.
+- `GET/POST/PATCH/DELETE /api/usuarios/` (**só Dono** — `SoDono`): gere FUNCIONÁRIOS (lista só perfis
+  `funcionario`). `POST` cria com **senha provisória definida pelo Dono** + `senha_provisoria=True`
+  e aceita `acesso_financeiro` (default False). `PATCH` aceita `ativo` (sincroniza `User.is_active`),
+  `acesso_financeiro` e o reset de senha: `{"resetar_senha": true}` gera uma provisória aleatória e a
+  devolve UMA vez em `senha_provisoria_gerada` (ou `{"senha": "..."}` para definir manualmente).
+  Validações PT-BR: usuário/e-mail únicos, senha mínima. Não ecoa nem loga senhas.
 
 ### Como autenticar
 
-1. `POST /api/auth/login/` com usuário/senha do superuser.
+1. `POST /api/auth/login/` com usuário/senha do Dono (superuser) ou de um Funcionário.
 2. Enviar o access token no header: `Authorization: Bearer <access>`.
 3. Quando expirar, renovar via `POST /api/auth/refresh/`.
 
@@ -365,7 +407,14 @@ Django por `http://backend:8000`.
 - **`esgotado`** exposto como campo read-only derivado da property do model.
 - **Tratamento de erros**: `EXCEPTION_HANDLER` customizado (`catalogo/exceptions.py`) garante
   resposta informativa; nunca falhar em silêncio. Mensagens de validação em PT-BR.
-- **Segredos só em `.env`** (no `.gitignore`); nada de credenciais no código; não logar segredos.
+- **Padronização — validação no servidor (regra):** todo limite/validação aplicado na interface
+  (tamanho de texto, faixas numéricas, máscaras, obrigatoriedade, unicidade) **tem equivalente no
+  backend** (modelo/serializer). A UI é conveniência; a fonte da verdade é o servidor — nunca confiar
+  só no cliente (senão dá para burlar pelo navegador). Mensagens de validação em PT-BR.
+- **Padronização — segredos e dados sensíveis (regra):** segredos só em `.env` (no `.gitignore`);
+  nada de credenciais no código; **nunca logar segredos**. Dados sensíveis do cliente (nome, contato,
+  medidas, dados de pagamento) **fora de logs e de URLs** (LGPD); o erro técnico detalhado fica nos
+  logs do servidor, mas o que chega ao usuário é uma mensagem amigável (sem termos técnicos/inglês).
 - **Docker Compose** sobe a stack completa (db + backend + frontend) com hot reload; o
   entrypoint do backend automatiza migrate/seed/superuser. Postgres também pode subir sozinho
   (`docker compose up -d db`) para desenvolvimento sem container do app.
@@ -380,10 +429,31 @@ Django por `http://backend:8000`.
   `/api/webhooks/whatsapp/` no backend, com `WEBHOOK_EVENTS_MESSAGES_UPSERT=true` obrigatório para
   mensagens de entrada chegarem ao Django; sessão persistida no volume `atelie_evolution`. Número
   **dedicado** (risco de banimento — nunca o principal da loja).
+  **Nota importante para demo/AWS t3.micro:** a Evolution/Baileys pode ficar pesada ou parecer travada
+  quando conecta um WhatsApp com muito histórico, muitos contatos/grupos, imagens/stickers ou mensagens
+  antigas. Logs já mostraram `Timed Out`, `No session record`, `qrcodeCount` alto e deadlock no banco
+  `evolution` (`IsOnWhatsapp`) durante sincronização. Para apresentação, prefira um WhatsApp dedicado,
+  limpo e com poucas conversas; se o site parar de responder após mexer no WhatsApp, verifique primeiro
+  `docker compose ps`, `docker logs atelie_evolution --tail 200` e reinicie a stack com
+  `docker compose up -d db backend frontend redis evolution-db-init evolution-api`.
 - **Testes com pytest-django** (`pytest.ini` aponta `DJANGO_SETTINGS_MODULE=config.settings`).
 
 ## Histórico de mudanças
 
+- **2026-06-24** — **Multiusuário com papéis fixos** (mesmo ateliê; NÃO é multi-loja). Novo model
+  **`Perfil`** (OneToOne com `User`; `papel` dono/funcionario, `ativo`, `acesso_financeiro`,
+  `senha_provisoria`, `criado_por`, `criado_em`) — migrations `0008` (modelo) + `0009` (cria
+  `Perfil` dono para o superuser atual). Novo `catalogo/permissions.py` (`perfil_efetivo`/`eh_dono`/
+  `pode_financeiro` + classes `LeituraPublicaEscritaEquipe`, `EhEquipeAtiva`, `PodeFinanceiro`,
+  `SoDono`) aplicado a todos os recursos: catálogo/estoque/categorias/cores/destaques e encomendas =
+  Dono/Funcionário; Vendas (`pedidos`) = Dono ou funcionário com `acesso_financeiro`; `usuarios` e
+  Configurações de WhatsApp = só Dono. Login passou a `TokenComPapelSerializer` (claims `papel`/
+  `acesso_financeiro`, recusa inativo). Novos endpoints: `GET /me/`, `POST /me/senha/` (limpa
+  `senha_provisoria`) e `UsuarioViewSet` (`/usuarios/`, só Dono: criar funcionário c/ senha
+  provisória, ativar/desativar sincronizando `User.is_active`, liberar/revogar financeiro, resetar
+  senha gerando provisória mostrada uma vez, excluir). Senhas nunca logadas. Superuser sem `Perfil`
+  age como Dono (não trava o `createsuperuser`). Novo `test_usuarios.py` (20 testes). Suíte: **114
+  testes passando**.
 - **2026-06-19** — Criação inicial do backend: models (Categoria, Peca, Variacao, Imagem),
   serializers aninhados com `esgotado`, ViewSets (vitrine pública + CRUD admin), JWT (login/
   refresh), CORS, admin com inlines, comando `seed_dados`, paginação (`PAGE_SIZE=20`),

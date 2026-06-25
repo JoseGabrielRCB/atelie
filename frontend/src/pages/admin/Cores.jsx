@@ -5,8 +5,10 @@ import { Plus, Pencil, Trash2 } from "lucide-react";
 import { criarCor, atualizarCor, excluirCor } from "../../lib/api";
 import { useCores } from "../../hooks/useCores";
 import { useOrdenacao, ordenarPor } from "../../hooks/useOrdenacao";
+import { useSelecao } from "../../hooks/useSelecao";
 import { hexValido, normalizarHex } from "../../lib/cores";
-import { CabecalhoOrdenavel } from "../../components/admin/CabecalhoOrdenavel";
+import { CabecalhoOrdenavel, OrdenarMobile } from "../../components/admin/CabecalhoOrdenavel";
+import { CaixaTodos, CaixaLinha, BarraSelecao } from "../../components/admin/Selecao";
 import Modal from "../../components/admin/Modal";
 import ConfirmarExclusao from "../../components/admin/ConfirmarExclusao";
 import { Carregando, Erro, Vazio } from "../../components/Estado";
@@ -137,6 +139,7 @@ export default function Cores() {
   const [formAberto, setFormAberto] = useState(false);
   const [emEdicao, setEmEdicao] = useState(null); // cor sendo editada (ou null = nova)
   const [exclusao, setExclusao] = useState(null);
+  const sel = useSelecao();
 
   const { ordenacao, alternar } = useOrdenacao("admin-cores", {
     coluna: "nome",
@@ -147,6 +150,9 @@ export default function Cores() {
     nome: (c) => c.nome,
     hex: (c) => c.hex,
   });
+
+  const idsVisiveis = cores.map((c) => c.id);
+  const selecionadas = cores.filter((c) => sel.estaSelecionado(c.id));
 
   function abrirNova() {
     setErro("");
@@ -162,23 +168,27 @@ export default function Cores() {
     setFormAberto(true);
   }
 
-  function pedirExclusao(cor) {
+  function pedirExclusao(lista) {
+    if (lista.length === 0) return;
     setErro("");
     setOk("");
     setExclusao({
-      titulo: "Excluir cor",
-      itens: [{ chave: `cor-${cor.id}`, titulo: `Cor "${cor.nome}" (${cor.hex})` }],
-      resumo: "Total: 1 cor.",
+      titulo: lista.length > 1 ? "Excluir cores" : "Excluir cor",
+      itens: lista.map((cor) => ({
+        chave: `cor-${cor.id}`,
+        titulo: `Cor "${cor.nome}" (${cor.hex})`,
+      })),
+      resumo: `Total: ${lista.length} ${lista.length === 1 ? "cor" : "cores"}.`,
       // Cor não tem dependentes em cascata → confirmação simples.
       cascata: false,
-      confirmacaoTexto: null,
-      alvos: [{ id: cor.id, rotulo: `Cor "${cor.nome}"` }],
+      alvos: lista.map((cor) => ({ id: cor.id, rotulo: `Cor "${cor.nome}"` })),
       excluir: excluirCor,
     });
   }
 
   function aoConcluirExclusao({ sucesso, falhas }) {
     qc.invalidateQueries({ queryKey: ["cores"] });
+    sel.limpar();
     if (falhas.length === 0) setOk(`${sucesso} cor(es) excluída(s).`);
     else setErro(`${falhas.length} cor(es) não puderam ser excluídas.`);
   }
@@ -218,63 +228,95 @@ export default function Cores() {
       )}
 
       {cores.length > 0 && (
-        <div className="overflow-x-auto rounded-lg border border-borda">
-          <table className="w-full min-w-[420px] text-left text-sm">
-            <thead className="border-b border-borda bg-superficie text-texto-suave">
-              <tr>
-                <th className="w-16 px-4 py-3 font-medium">Cor</th>
-                <CabecalhoOrdenavel
-                  coluna="nome"
-                  rotulo="Nome"
-                  ordenacao={ordenacao}
-                  aoOrdenar={alternar}
-                />
-                <CabecalhoOrdenavel
-                  coluna="hex"
-                  rotulo="Hex"
-                  ordenacao={ordenacao}
-                  aoOrdenar={alternar}
-                />
-                <th className="px-4 py-3 font-medium text-right">Ações</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-borda">
-              {cores.map((c) => (
-                <tr key={c.id}>
-                  <td className="px-4 py-3">
-                    <span
-                      aria-hidden="true"
-                      className="inline-block h-7 w-7 rounded border border-borda"
-                      style={{ backgroundColor: hexValido(c.hex) ? c.hex : "transparent" }}
+        <>
+          <BarraSelecao
+            quantidade={sel.quantidade}
+            aoExcluir={() => pedirExclusao(selecionadas)}
+            aoLimpar={sel.limpar}
+          />
+          <OrdenarMobile
+            className="mb-3"
+            ordenacao={ordenacao}
+            aoOrdenar={alternar}
+            colunas={[
+              { coluna: "nome", rotulo: "Nome" },
+              { coluna: "hex", rotulo: "Hex" },
+            ]}
+          />
+          <div className="sm:overflow-x-auto sm:rounded-lg sm:border sm:border-borda">
+            <table className="tabela-cartoes w-full min-w-[420px] text-left text-sm">
+              <thead className="border-b border-borda bg-superficie text-texto-suave">
+                <tr>
+                  <th className="w-10 px-4 py-3">
+                    <CaixaTodos
+                      ids={idsVisiveis}
+                      estaSelecionado={sel.estaSelecionado}
+                      definirVarios={sel.definirVarios}
+                      rotulo="Selecionar todas as cores"
                     />
-                  </td>
-                  <td className="px-4 py-3 font-medium text-texto">{c.nome}</td>
-                  <td className="px-4 py-3 tabular-nums text-texto-suave">{c.hex}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => abrirEdicao(c)}
-                        aria-label={`Editar cor ${c.nome}`}
-                        className="inline-flex items-center justify-center rounded-lg border border-borda p-1.5 text-texto-suave transition hover:border-acento-escuro hover:text-acento-escuro focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-escuro"
-                      >
-                        <Pencil size={16} aria-hidden="true" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => pedirExclusao(c)}
-                        aria-label={`Excluir cor ${c.nome}`}
-                        className="inline-flex items-center justify-center rounded-lg border border-erro/40 p-1.5 text-erro transition hover:bg-erro/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-erro"
-                      >
-                        <Trash2 size={16} aria-hidden="true" />
-                      </button>
-                    </div>
-                  </td>
+                  </th>
+                  <th className="w-16 px-4 py-3 font-medium">Cor</th>
+                  <CabecalhoOrdenavel
+                    coluna="nome"
+                    rotulo="Nome"
+                    ordenacao={ordenacao}
+                    aoOrdenar={alternar}
+                  />
+                  <CabecalhoOrdenavel
+                    coluna="hex"
+                    rotulo="Hex"
+                    ordenacao={ordenacao}
+                    aoOrdenar={alternar}
+                  />
+                  <th className="px-4 py-3 font-medium text-right">Ações</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-borda">
+                {cores.map((c) => (
+                  <tr key={c.id} className={sel.estaSelecionado(c.id) ? "bg-acento/5" : ""}>
+                    <td className="cel-selecao px-4 py-3">
+                      <CaixaLinha
+                        id={c.id}
+                        estaSelecionado={sel.estaSelecionado}
+                        alternar={sel.alternar}
+                        rotulo={`Selecionar cor ${c.nome}`}
+                      />
+                    </td>
+                    <td className="px-4 py-3" data-rotulo="Cor">
+                      <span
+                        aria-hidden="true"
+                        className="inline-block h-7 w-7 rounded border border-borda"
+                        style={{ backgroundColor: hexValido(c.hex) ? c.hex : "transparent" }}
+                      />
+                    </td>
+                    <td className="cel-principal px-4 py-3 font-medium text-texto">{c.nome}</td>
+                    <td className="px-4 py-3 tabular-nums text-texto-suave" data-rotulo="Hex">{c.hex}</td>
+                    <td className="cel-acoes px-4 py-3">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => abrirEdicao(c)}
+                          aria-label={`Editar cor ${c.nome}`}
+                          className="inline-flex items-center justify-center rounded-lg border border-borda p-1.5 text-texto-suave transition hover:border-acento-escuro hover:text-acento-escuro focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-escuro"
+                        >
+                          <Pencil size={16} aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => pedirExclusao([c])}
+                          aria-label={`Excluir cor ${c.nome}`}
+                          className="inline-flex items-center justify-center rounded-lg border border-erro/40 p-1.5 text-erro transition hover:bg-erro/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-erro"
+                        >
+                          <Trash2 size={16} aria-hidden="true" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       <FormCor
@@ -290,7 +332,6 @@ export default function Cores() {
         itens={exclusao?.itens ?? []}
         resumo={exclusao?.resumo ?? ""}
         cascata={exclusao?.cascata ?? false}
-        confirmacaoTexto={exclusao?.confirmacaoTexto ?? null}
         alvos={exclusao?.alvos ?? []}
         excluir={exclusao?.excluir}
         aoConcluir={aoConcluirExclusao}

@@ -13,8 +13,17 @@ from .models import (
     MensagemWhatsApp,
     Peca,
     Pedido,
+    Perfil,
     Variacao,
 )
+
+
+@admin.register(Perfil)
+class PerfilAdmin(admin.ModelAdmin):
+    list_display = ["usuario", "papel", "ativo", "acesso_financeiro", "senha_provisoria", "criado_em"]
+    list_filter = ["papel", "ativo", "acesso_financeiro"]
+    search_fields = ["usuario__username", "usuario__first_name", "usuario__email"]
+    readonly_fields = ["criado_em"]
 
 
 class VariacaoInline(admin.TabularInline):

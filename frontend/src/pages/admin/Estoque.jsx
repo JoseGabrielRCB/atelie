@@ -6,7 +6,7 @@ import { useSelecao } from "../../hooks/useSelecao";
 import { atualizarVariacao, excluirVariacao } from "../../lib/api";
 import { useOrdenacao, ordenarPor } from "../../hooks/useOrdenacao";
 import { resumoTotais } from "../../lib/exclusao";
-import { CabecalhoOrdenavel } from "../../components/admin/CabecalhoOrdenavel";
+import { CabecalhoOrdenavel, OrdenarMobile } from "../../components/admin/CabecalhoOrdenavel";
 import { CaixaTodos, CaixaLinha, BarraSelecao } from "../../components/admin/Selecao";
 import ConfirmarExclusao from "../../components/admin/ConfirmarExclusao";
 import { Carregando, Erro, Vazio } from "../../components/Estado";
@@ -83,11 +83,11 @@ function LinhaEstoque({ v, salvarMut, selecionada, caixa, onExcluir }) {
         (selecionada ? "bg-acento/5" : v.esgotado ? "bg-erro/5" : "hover:bg-fundo")
       }
     >
-      <td className="px-4 py-3">{caixa}</td>
-      <td className="px-4 py-3 font-medium text-texto">{v.pecaNome}</td>
-      <td className="px-4 py-3">{v.tamanho || "—"}</td>
-      <td className="px-4 py-3">{v.cor || "—"}</td>
-      <td className="px-4 py-3">
+      <td className="cel-selecao px-4 py-3">{caixa}</td>
+      <td className="cel-principal px-4 py-3 font-medium text-texto">{v.pecaNome}</td>
+      <td className="px-4 py-3" data-rotulo="Tamanho">{v.tamanho || "—"}</td>
+      <td className="px-4 py-3" data-rotulo="Cor">{v.cor || "—"}</td>
+      <td className="px-4 py-3" data-rotulo="Estoque">
         {editando ? (
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-1.5">
@@ -137,7 +137,7 @@ function LinhaEstoque({ v, salvarMut, selecionada, caixa, onExcluir }) {
           </div>
         )}
       </td>
-      <td className="px-4 py-3 text-right">
+      <td className="cel-acoes px-4 py-3 text-right">
         {editando ? (
           <div className="inline-flex items-center gap-1.5">
             <button
@@ -217,7 +217,6 @@ export default function Estoque() {
       resumo: resumoTotais({ variacoes: vars.length }),
       // Variação não tem dependentes em cascata → confirmação simples.
       cascata: false,
-      confirmacaoTexto: null,
       alvos: vars.map((v) => ({ id: v.id, rotulo: rotuloVariacao(v) })),
       excluir: excluirVariacao,
     });
@@ -309,8 +308,20 @@ export default function Estoque() {
       {ordenadas.length === 0 ? (
         <Vazio texto="Nenhuma variação encontrada." />
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-borda">
-          <table className="w-full min-w-[640px] border-collapse text-sm">
+        <>
+        <OrdenarMobile
+          className="mb-3"
+          ordenacao={ordenacao}
+          aoOrdenar={alternar}
+          colunas={[
+            { coluna: "pecaNome", rotulo: "Peça" },
+            { coluna: "tamanho", rotulo: "Tamanho" },
+            { coluna: "cor", rotulo: "Cor" },
+            { coluna: "estoque", rotulo: "Estoque" },
+          ]}
+        />
+        <div className="sm:overflow-x-auto sm:rounded-lg sm:border sm:border-borda">
+          <table className="tabela-cartoes w-full min-w-[640px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-borda bg-superficie text-left text-texto-suave">
                 <th className="w-10 px-4 py-3">
@@ -371,6 +382,7 @@ export default function Estoque() {
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       <ConfirmarExclusao
@@ -380,7 +392,6 @@ export default function Estoque() {
         itens={exclusao?.itens ?? []}
         resumo={exclusao?.resumo ?? ""}
         cascata={exclusao?.cascata ?? false}
-        confirmacaoTexto={exclusao?.confirmacaoTexto ?? null}
         alvos={exclusao?.alvos ?? []}
         excluir={exclusao?.excluir}
         aoConcluir={aoConcluirExclusao}

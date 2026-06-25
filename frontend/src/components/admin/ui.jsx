@@ -37,7 +37,7 @@ export function BotaoPerigo({ className = "", ...props }) {
 }
 
 export const inputClasse =
-  "w-full rounded-lg border border-borda bg-superficie px-3 py-2 text-texto placeholder:text-texto-suave focus:border-acento-escuro focus:outline-none focus:ring-2 focus:ring-acento-escuro/30";
+  "w-full rounded-lg border border-borda bg-superficie px-3 py-2 text-texto placeholder:italic placeholder:text-texto-suave/70 focus:border-acento-escuro focus:outline-none focus:ring-2 focus:ring-acento-escuro/30";
 
 export function Campo({ label, htmlFor, dica, children }) {
   return (

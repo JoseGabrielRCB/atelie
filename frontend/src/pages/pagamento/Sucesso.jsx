@@ -25,11 +25,11 @@ export default function Sucesso() {
         aria-hidden="true"
       />
       <h1 className="font-display text-3xl font-semibold text-texto">
-        Pagamento aprovado!
+        Pedido recebido!
       </h1>
       <p className="mt-3 text-texto-suave">
-        Seu pedido está confirmado. Em breve entraremos em contato para combinar
-        a entrega.
+        Estamos confirmando o seu pagamento. Assim que ele for confirmado,
+        entraremos em contato para combinar a entrega.
       </p>
       {pedidoId && (
         <p className="mt-2 text-sm text-texto-suave">

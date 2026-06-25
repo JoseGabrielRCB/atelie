@@ -4,9 +4,12 @@ Leitura é pública; escrita exige JWT de admin (IsAuthenticatedOrReadOnly,
 definido como permissão padrão no settings).
 """
 
+import logging
+import secrets
 from decimal import Decimal
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
 from django.utils.decorators import method_decorator
@@ -17,8 +20,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
-
-import logging
+from rest_framework_simplejwt.views import TokenObtainPairView
 
 from . import evolution, pagamentos
 from .comandos import interpretar
@@ -34,7 +36,15 @@ from .models import (
     MensagemWhatsApp,
     Peca,
     Pedido,
+    Perfil,
     Variacao,
+)
+from .permissions import (
+    EhEquipeAtiva,
+    LeituraPublicaEscritaEquipe,
+    PodeFinanceiro,
+    SoDono,
+    perfil_efetivo,
 )
 from .notificacoes import (
     enviar_whatsapp,
@@ -49,13 +59,19 @@ from .serializers import (
     EncomendaCreateSerializer,
     EncomendaSerializer,
     ImagemSerializer,
+    MudarSenhaSerializer,
     PecaSerializer,
     PedidoSerializer,
+    TokenComPapelSerializer,
+    UsuarioCreateSerializer,
+    UsuarioSerializer,
     VariacaoSerializer,
 )
 from .signals import compra_paga, encomenda_criada
 
 logger = logging.getLogger(__name__)
+
+User = get_user_model()
 
 # Janela de validade do pedido aguardando pagamento.
 PEDIDO_VALIDADE_MINUTOS = 30
@@ -64,17 +80,20 @@ PEDIDO_VALIDADE_MINUTOS = 30
 class CategoriaViewSet(viewsets.ModelViewSet):
     queryset = Categoria.objects.all()
     serializer_class = CategoriaSerializer
+    permission_classes = [LeituraPublicaEscritaEquipe]
 
 
 class CorViewSet(viewsets.ModelViewSet):
-    """Paleta de cores reutilizável (leitura pública; escrita só admin)."""
+    """Paleta de cores reutilizável (leitura pública; escrita só a equipe)."""
 
     queryset = Cor.objects.all()
     serializer_class = CorSerializer
+    permission_classes = [LeituraPublicaEscritaEquipe]
 
 
 class PecaViewSet(viewsets.ModelViewSet):
     serializer_class = PecaSerializer
+    permission_classes = [LeituraPublicaEscritaEquipe]
     filterset_fields = ["categoria", "tipo", "destaque"]
     search_fields = ["nome", "descricao"]
     ordering_fields = ["criado_em", "preco", "nome"]
@@ -97,6 +116,7 @@ class PecaViewSet(viewsets.ModelViewSet):
 class VariacaoViewSet(viewsets.ModelViewSet):
     queryset = Variacao.objects.select_related("peca").all()
     serializer_class = VariacaoSerializer
+    permission_classes = [LeituraPublicaEscritaEquipe]
     filterset_fields = ["peca", "tamanho", "cor"]
 
     def perform_update(self, serializer):
@@ -115,6 +135,7 @@ class VariacaoViewSet(viewsets.ModelViewSet):
 class ImagemViewSet(viewsets.ModelViewSet):
     queryset = Imagem.objects.select_related("peca").all()
     serializer_class = ImagemSerializer
+    permission_classes = [LeituraPublicaEscritaEquipe]
     filterset_fields = ["peca", "principal"]
 
 
@@ -136,7 +157,8 @@ class EncomendaViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action == "create":
             return [AllowAny()]
-        return [IsAuthenticated()]
+        # Ver/atualizar status/excluir encomendas: Dono ou Funcionário ativo.
+        return [EhEquipeAtiva()]
 
     def get_throttles(self):
         if self.action == "create":
@@ -527,7 +549,8 @@ class PedidoViewSet(viewsets.ReadOnlyModelViewSet):
 
     queryset = Pedido.objects.prefetch_related("itens__variacao__peca").all()
     serializer_class = PedidoSerializer
-    permission_classes = [IsAuthenticated]
+    # Financeiro: Dono, ou Funcionário com acesso_financeiro liberado.
+    permission_classes = [PodeFinanceiro]
     filterset_fields = ["status"]
 
 
@@ -541,9 +564,9 @@ class PedidoViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class WhatsappDonoView(APIView):
-    """Consulta e atualiza o numero autorizado do dono (admin)."""
+    """Consulta e atualiza o numero autorizado do dono (Configurações — só Dono)."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [SoDono]
 
     def get(self, request, *args, **kwargs):
         return Response(evolution.whatsapp_dono_atual())
@@ -563,27 +586,166 @@ class WhatsappDonoView(APIView):
         return Response({**dados, "mensagem": "WhatsApp do dono atualizado."})
 
 class WhatsappConexaoStatusView(APIView):
-    """Estado da conexão do WhatsApp do dono (admin)."""
+    """Estado da conexão do WhatsApp do dono (Configurações — só Dono)."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [SoDono]
 
     def get(self, request, *args, **kwargs):
         return Response(evolution.estado_conexao())
 
 
 class WhatsappConectarView(APIView):
-    """Garante a instância e devolve o QR Code para parear o número (admin)."""
+    """Garante a instância e devolve o QR Code para parear o número (só Dono)."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [SoDono]
 
     def post(self, request, *args, **kwargs):
         return Response(evolution.conectar())
 
 
 class WhatsappDesconectarView(APIView):
-    """Desconecta (logout) o número da instância (admin)."""
+    """Desconecta (logout) o número da instância (só Dono)."""
+
+    permission_classes = [SoDono]
+
+    def post(self, request, *args, **kwargs):
+        return Response(evolution.desconectar())
+
+
+# --------------------------------------------------------------------------
+# Contas do painel — login com papel, identidade (/me/), troca de senha e
+# gestão de funcionários (só Dono).
+# --------------------------------------------------------------------------
+
+
+class LoginView(TokenObtainPairView):
+    """Login JWT que inclui o papel/acesso_financeiro nas claims do token."""
+
+    serializer_class = TokenComPapelSerializer
+
+
+def _gerar_senha_provisoria() -> str:
+    """Senha provisória aleatória, forte o bastante para os validadores padrão."""
+    return secrets.token_urlsafe(9)
+
+
+class MeView(APIView):
+    """Identidade do usuário logado (o front decide o que mostrar)."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        perfil = perfil_efetivo(request.user)
+        return Response(
+            {
+                "usuario": request.user.username,
+                "nome": request.user.first_name,
+                "papel": perfil.papel if perfil else None,
+                "ativo": bool(perfil),
+                "senha_provisoria": bool(perfil and perfil.senha_provisoria),
+                "acesso_financeiro": bool(perfil and perfil.acesso_financeiro),
+            }
+        )
+
+
+class MudarSenhaView(APIView):
+    """Troca da própria senha. Ao trocar, limpa ``senha_provisoria``."""
 
     permission_classes = [IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        return Response(evolution.desconectar())
+        serializer = MudarSenhaSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        user = request.user
+        if not user.check_password(serializer.validated_data["senha_atual"]):
+            raise serializers.ValidationError(
+                {"senha_atual": ["Senha atual incorreta."]}
+            )
+        user.set_password(serializer.validated_data["nova_senha"])
+        user.save(update_fields=["password"])
+        perfil = getattr(user, "perfil", None)
+        if perfil is not None and perfil.senha_provisoria:
+            perfil.senha_provisoria = False
+            perfil.save(update_fields=["senha_provisoria"])
+        return Response({"mensagem": "Senha atualizada com sucesso."})
+
+
+class UsuarioViewSet(viewsets.ModelViewSet):
+    """Gestão de FUNCIONÁRIOS — exclusiva do Dono (reforçada no backend).
+
+    Lista/gerencia apenas perfis de papel ``funcionario`` (o Dono não se
+    autoexclui nem edita outros donos por aqui). Senhas nunca são logadas; a
+    senha provisória gerada num reset volta UMA vez na resposta, para o Dono
+    repassar ao funcionário.
+    """
+
+    permission_classes = [SoDono]
+    serializer_class = UsuarioSerializer
+    queryset = (
+        User.objects.select_related("perfil")
+        .filter(perfil__papel=Perfil.Papel.FUNCIONARIO)
+        .order_by("-perfil__criado_em")
+    )
+
+    def create(self, request, *args, **kwargs):
+        serializer = UsuarioCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        dados = serializer.validated_data
+        with transaction.atomic():
+            user = User.objects.create_user(
+                username=dados["usuario"],
+                email=dados.get("email", "") or "",
+                password=dados["senha"],
+                first_name=dados.get("nome", "") or "",
+            )
+            Perfil.objects.create(
+                usuario=user,
+                papel=Perfil.Papel.FUNCIONARIO,
+                ativo=True,
+                acesso_financeiro=dados.get("acesso_financeiro", False),
+                senha_provisoria=True,
+                criado_por=request.user if request.user.is_authenticated else None,
+            )
+        return Response(UsuarioSerializer(user).data, status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        return self._atualizar(request)
+
+    def partial_update(self, request, *args, **kwargs):
+        return self._atualizar(request)
+
+    def _atualizar(self, request):
+        """Ativar/desativar, liberar/revogar financeiro e resetar senha."""
+        user = self.get_object()
+        perfil = user.perfil
+        extra = {}
+
+        if "ativo" in request.data:
+            ativo = bool(request.data["ativo"])
+            perfil.ativo = ativo
+            # Sincroniza com User.is_active para bloquear o login de imediato.
+            if user.is_active != ativo:
+                user.is_active = ativo
+                user.save(update_fields=["is_active"])
+
+        if "acesso_financeiro" in request.data:
+            perfil.acesso_financeiro = bool(request.data["acesso_financeiro"])
+
+        # Reset de senha: gera uma provisória (mostrada ao Dono) ou usa a enviada.
+        senha = None
+        if request.data.get("resetar_senha"):
+            senha = _gerar_senha_provisoria()
+        elif request.data.get("senha"):
+            senha = str(request.data["senha"])
+            serializer = UsuarioCreateSerializer()
+            senha = serializer.validate_senha(senha)
+        if senha:
+            user.set_password(senha)
+            user.save(update_fields=["password"])
+            perfil.senha_provisoria = True
+            extra["senha_provisoria_gerada"] = senha
+
+        perfil.save()
+        saida = UsuarioSerializer(user).data
+        saida.update(extra)
+        return Response(saida)

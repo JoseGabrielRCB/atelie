@@ -6,15 +6,23 @@ import {
   excluirVariacao,
 } from "../../lib/api";
 import SeletorCor from "./SeletorCor";
+import ConfirmarExclusao from "./ConfirmarExclusao";
 import { BotaoPrimario, BotaoPerigo, Campo, Feedback, inputClasse } from "./ui";
 
 const TAMANHOS = ["P", "M", "G", "GG", "Único"];
+
+// Rótulo legível de uma variação (tamanho / cor) para o aviso de exclusão.
+function rotuloVariacao(v) {
+  const tc = [v.tamanho, v.cor].filter(Boolean).join(" / ") || "única";
+  return `Variação "${tc}"`;
+}
 
 // Editor de variações (tamanho/cor/estoque) de uma peça pronta.
 // A cor usa a paleta salva (SeletorCor) e persiste `cor` + `cor_hex`.
 export default function VariacoesEditor({ peca }) {
   const qc = useQueryClient();
   const [erro, setErro] = useState("");
+  const [exclusao, setExclusao] = useState(null);
   const [nova, setNova] = useState({ tamanho: "", cor: "", corHex: "", estoque: 0 });
 
   const invalidar = () => {
@@ -37,11 +45,10 @@ export default function VariacoesEditor({ peca }) {
     onError: (e) => setErro(e.message),
   });
 
-  const excluirMut = useMutation({
-    mutationFn: excluirVariacao,
-    onSuccess: invalidar,
-    onError: (e) => setErro(e.message),
-  });
+  function aoConcluirExclusao({ falhas }) {
+    invalidar();
+    if (falhas.length) setErro("Não foi possível remover a variação. Tente novamente.");
+  }
 
   function adicionar() {
     setErro("");
@@ -86,7 +93,7 @@ export default function VariacoesEditor({ peca }) {
             }}
             onRemover={() => {
               setErro("");
-              if (window.confirm("Remover esta variação?")) excluirMut.mutate(v.id);
+              setExclusao(v);
             }}
           />
         ))}
@@ -105,7 +112,7 @@ export default function VariacoesEditor({ peca }) {
               list="tamanhos-sugeridos"
               value={nova.tamanho}
               onChange={(e) => setNova((n) => ({ ...n, tamanho: e.target.value }))}
-              placeholder="Tamanho"
+              placeholder="Ex.: M"
               className={inputClasse}
             />
             <datalist id="tamanhos-sugeridos">
@@ -132,7 +139,7 @@ export default function VariacoesEditor({ peca }) {
               step="1"
               value={nova.estoque}
               onChange={(e) => setNova((n) => ({ ...n, estoque: e.target.value }))}
-              placeholder="Estoque"
+              placeholder="Ex.: 10"
               className={inputClasse}
             />
           </Campo>
@@ -142,11 +149,21 @@ export default function VariacoesEditor({ peca }) {
               onClick={adicionar}
               disabled={criarMut.isPending}
             >
-              Adicionar
+              {criarMut.isPending ? "Adicionando..." : "Adicionar"}
             </BotaoPrimario>
           </div>
         </div>
       </div>
+
+      <ConfirmarExclusao
+        aberto={Boolean(exclusao)}
+        aoFechar={() => setExclusao(null)}
+        titulo="Excluir variação"
+        itens={exclusao ? [{ chave: `var-${exclusao.id}`, titulo: rotuloVariacao(exclusao) }] : []}
+        alvos={exclusao ? [{ id: exclusao.id, rotulo: rotuloVariacao(exclusao) }] : []}
+        excluir={excluirVariacao}
+        aoConcluir={aoConcluirExclusao}
+      />
     </div>
   );
 }

@@ -1,26 +1,6 @@
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
-
-const LINKS = [
-  { para: "/admin", rotulo: "Resumo", fim: true },
-  { para: "/admin/pecas", rotulo: "Peças", fim: false },
-  { para: "/admin/estoque", rotulo: "Estoque", fim: false },
-  { para: "/admin/categorias", rotulo: "Categorias", fim: false },
-  { para: "/admin/cores", rotulo: "Cores", fim: false },
-  { para: "/admin/destaques", rotulo: "Destaques", fim: false },
-  { para: "/admin/encomendas", rotulo: "Encomendas", fim: false },
-  { para: "/admin/vendas", rotulo: "Vendas", fim: false },
-  { para: "/admin/whatsapp", rotulo: "WhatsApp", fim: false },
-];
-
-function classeLink({ isActive }) {
-  return (
-    "whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-escuro " +
-    (isActive
-      ? "bg-acento-escuro text-white"
-      : "text-texto-suave hover:bg-borda/50 hover:text-texto")
-  );
-}
+import AdminNav from "./AdminNav";
 
 export default function AdminLayout() {
   const { usuario, sair } = useAuth();
@@ -60,13 +40,7 @@ export default function AdminLayout() {
             </button>
           </div>
         </div>
-        <nav className="mx-auto flex max-w-[1200px] gap-1 overflow-x-auto px-3 pb-2">
-          {LINKS.map((l) => (
-            <NavLink key={l.para} to={l.para} end={l.fim} className={classeLink}>
-              {l.rotulo}
-            </NavLink>
-          ))}
-        </nav>
+        <AdminNav />
       </header>
 
       <main className="mx-auto max-w-[1200px] px-4 py-6">

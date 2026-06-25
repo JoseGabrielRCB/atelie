@@ -9,9 +9,11 @@ import {
   whatsappStatus,
 } from "../../lib/api";
 import { Carregando, Erro } from "../../components/Estado";
+import Modal from "../../components/admin/Modal";
 import { BotaoPrimario, BotaoSecundario, Feedback, Selo, inputClasse } from "../../components/admin/ui";
 
 // Rótulo + cor do selo por estado de conexão (vindo do backend).
+// Os rótulos são em PT-BR simples, sem jargão técnico (ex.: "Evolution").
 const ESTADOS = {
   open: { rotulo: "Conectado", cor: "verde" },
   connecting: { rotulo: "Conectando…", cor: "acento" },
@@ -22,8 +24,8 @@ const ESTADOS = {
   desconhecido: { rotulo: "Desconhecido", cor: "neutro" },
   nao_configurado: { rotulo: "Não configurado", cor: "vermelho" },
   nao_autorizado: { rotulo: "Chave inválida", cor: "vermelho" },
-  erro_evolution: { rotulo: "Erro na Evolution", cor: "vermelho" },
-  indisponivel: { rotulo: "Evolution indisponível", cor: "vermelho" },
+  erro_evolution: { rotulo: "Erro no serviço", cor: "vermelho" },
+  indisponivel: { rotulo: "Serviço indisponível", cor: "vermelho" },
 };
 
 // Garante o prefixo data: para o <img> do QR (a Evolution às vezes manda cru).
@@ -54,6 +56,8 @@ export default function Whatsapp() {
   const [feedback, setFeedback] = useState({ tipo: "", texto: "" });
   const [feedbackDono, setFeedbackDono] = useState({ tipo: "", texto: "" });
   const [numeroDonoEditado, setNumeroDonoEditado] = useState(null);
+  // Confirmação em modal (no lugar do popup do navegador): { titulo, mensagem, rotulo, aoConfirmar }.
+  const [confirmacao, setConfirmacao] = useState(null);
 
   const statusQ = useQuery({
     queryKey: ["admin", "whatsapp", "status"],
@@ -131,11 +135,12 @@ export default function Whatsapp() {
       setFeedbackDono({ tipo: "sucesso", texto: "Este já é o WhatsApp do dono." });
       return;
     }
-    const ok = window.confirm(
-      `Trocar o WhatsApp do dono de ${formatarNumero(atual)} para ${formatarNumero(novo)}?`
-    );
-    if (!ok) return;
-    donoMut.mutate(novo);
+    setConfirmacao({
+      titulo: "Trocar o WhatsApp do dono",
+      mensagem: `Trocar o WhatsApp do dono de ${formatarNumero(atual)} para ${formatarNumero(novo)}?`,
+      rotulo: "Trocar número",
+      aoConfirmar: () => donoMut.mutate(novo),
+    });
   }
 
   if (statusQ.isLoading || donoQ.isLoading) return <Carregando texto="Carregando WhatsApp…" />;
@@ -185,7 +190,7 @@ export default function Whatsapp() {
               inputMode="numeric"
               value={numeroDono}
               onChange={(e) => setNumeroDonoEditado(apenasDigitos(e.target.value))}
-              placeholder="5567999990000"
+              placeholder="Ex.: 5567999990000"
               className={inputClasse}
             />
             <p className="mt-1 text-xs text-texto-suave">
@@ -218,19 +223,19 @@ export default function Whatsapp() {
               </p>
               <BotaoSecundario
                 type="button"
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      "Desconectar o WhatsApp do bot? Os avisos param até reconectar."
-                    )
-                  ) {
-                    desconectarMut.mutate();
-                  }
-                }}
+                onClick={() =>
+                  setConfirmacao({
+                    titulo: "Desconectar o WhatsApp",
+                    mensagem:
+                      "Desconectar o WhatsApp do bot? Os avisos de venda, encomenda e estoque param até reconectar.",
+                    rotulo: "Desconectar",
+                    aoConfirmar: () => desconectarMut.mutate(),
+                  })
+                }
                 disabled={desconectarMut.isPending}
               >
                 <LogOut size={18} aria-hidden="true" />
-                Desconectar
+                {desconectarMut.isPending ? "Desconectando…" : "Desconectar"}
               </BotaoSecundario>
             </div>
           ) : mostrarQr ? (
@@ -285,6 +290,31 @@ export default function Whatsapp() {
           )}
         </div>
       )}
+
+      <Modal
+        aberto={Boolean(confirmacao)}
+        aoFechar={() => setConfirmacao(null)}
+        titulo={confirmacao?.titulo}
+        tamanho="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-texto">{confirmacao?.mensagem}</p>
+          <div className="flex flex-col gap-3 border-t border-borda pt-4 sm:flex-row sm:justify-end">
+            <BotaoSecundario type="button" onClick={() => setConfirmacao(null)}>
+              Cancelar
+            </BotaoSecundario>
+            <BotaoPrimario
+              type="button"
+              onClick={() => {
+                confirmacao?.aoConfirmar?.();
+                setConfirmacao(null);
+              }}
+            >
+              {confirmacao?.rotulo ?? "Confirmar"}
+            </BotaoPrimario>
+          </div>
+        </div>
+      </Modal>
     </section>
   );
 }

@@ -1,8 +1,77 @@
 """Modelos do catálogo do ateliê: Categoria, Cor, Peca, Variacao, Imagem, Encomenda."""
 
+from django.conf import settings
 from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models
 from django.utils.text import slugify
+
+
+class Perfil(models.Model):
+    """Perfil de acesso ao painel (1-para-1 com o ``User`` do Django).
+
+    Define o papel fixo do usuário (Dono ou Funcionário) dentro do MESMO ateliê
+    (não é multi-loja). O **Dono** tem acesso total (inclui Funcionários, Vendas/
+    financeiro e Configurações). O **Funcionário** gerencia catálogo/estoque/
+    encomendas/categorias/cores/destaques, mas NÃO acessa Funcionários nem
+    Configurações; o acesso ao financeiro (Vendas) é liberado caso a caso pelo
+    Dono via ``acesso_financeiro``.
+
+    A fonte da verdade das permissões é o backend (ver ``catalogo.permissions``).
+    """
+
+    class Papel(models.TextChoices):
+        DONO = "dono", "Dono"
+        FUNCIONARIO = "funcionario", "Funcionário"
+
+    usuario = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="perfil",
+        verbose_name="usuário",
+    )
+    papel = models.CharField(
+        "papel",
+        max_length=20,
+        choices=Papel.choices,
+        default=Papel.FUNCIONARIO,
+    )
+    ativo = models.BooleanField("ativo", default=True)
+    acesso_financeiro = models.BooleanField(
+        "acesso ao financeiro",
+        default=False,
+        help_text="Libera a seção Vendas/financeiro para um funcionário.",
+    )
+    senha_provisoria = models.BooleanField(
+        "senha provisória",
+        default=False,
+        help_text="Quando verdadeiro, força a troca de senha no próximo acesso.",
+    )
+    criado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="perfis_criados",
+        verbose_name="criado por",
+    )
+    criado_em = models.DateTimeField("criado em", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "perfil"
+        verbose_name_plural = "perfis"
+        ordering = ["usuario__username"]
+
+    def __str__(self):
+        return f"{self.usuario} ({self.get_papel_display()})"
+
+    @property
+    def eh_dono(self) -> bool:
+        return self.papel == self.Papel.DONO
+
+    @property
+    def pode_financeiro(self) -> bool:
+        """Dono sempre; funcionário só com acesso liberado."""
+        return self.eh_dono or self.acesso_financeiro
 
 # Valida cores no formato hexadecimal #RRGGBB (ex.: #B07A56).
 HEX_COR_VALIDATOR = RegexValidator(

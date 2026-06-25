@@ -8,7 +8,7 @@ import { useOrdenacao, ordenarPor } from "../../hooks/useOrdenacao";
 import Preco from "../../components/Preco";
 import { Carregando, Erro, Vazio } from "../../components/Estado";
 import { Feedback, Selo, inputClasse } from "../../components/admin/ui";
-import { CabecalhoOrdenavel } from "../../components/admin/CabecalhoOrdenavel";
+import { CabecalhoOrdenavel, OrdenarMobile } from "../../components/admin/CabecalhoOrdenavel";
 
 // A Home mostra até 8 peças na seção "Peças em destaque".
 const LIMITE_HOME = 8;
@@ -126,8 +126,21 @@ export default function Destaques() {
       )}
 
       {lista.length > 0 && (
-        <div className="overflow-x-auto rounded-lg border border-borda">
-          <table className="w-full min-w-[680px] border-collapse text-sm">
+        <>
+        <OrdenarMobile
+          className="mb-3"
+          ordenacao={ordenacao}
+          aoOrdenar={alternar}
+          colunas={[
+            { coluna: "nome", rotulo: "Peça" },
+            { coluna: "categoria", rotulo: "Categoria" },
+            { coluna: "preco", rotulo: "Preço" },
+            { coluna: "ativo", rotulo: "Status" },
+            { coluna: "destaque", rotulo: "Destaque" },
+          ]}
+        />
+        <div className="sm:overflow-x-auto sm:rounded-lg sm:border sm:border-borda">
+          <table className="tabela-cartoes w-full min-w-[680px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-borda bg-superficie text-left text-texto-suave">
                 <CabecalhoOrdenavel coluna="nome" rotulo="Peça" ordenacao={ordenacao} aoOrdenar={alternar} />
@@ -151,7 +164,7 @@ export default function Destaques() {
                       (p.destaque ? "bg-acento/5" : "")
                     }
                   >
-                    <td className="px-4 py-3 font-medium text-texto">
+                    <td className="cel-principal px-4 py-3 font-medium text-texto">
                       <div className="flex items-center gap-2">
                         {p.destaque && (
                           <Star
@@ -169,25 +182,25 @@ export default function Destaques() {
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-texto-suave">{p.categoria_nome}</td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 text-texto-suave" data-rotulo="Categoria">{p.categoria_nome}</td>
+                    <td className="px-4 py-3" data-rotulo="Preço">
                       <Preco valor={p.preco} />
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" data-rotulo="Status">
                       {p.ativo ? (
                         <Selo cor="verde">Ativa</Selo>
                       ) : (
                         <Selo cor="cinza">Oculta</Selo>
                       )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" data-rotulo="Destaque">
                       {p.destaque ? (
                         <Selo cor="acento">Em destaque</Selo>
                       ) : (
                         <span className="text-texto-suave">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="cel-acoes px-4 py-3">
                       <div className="flex justify-end">
                         <button
                           type="button"
@@ -223,6 +236,7 @@ export default function Destaques() {
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       <p className="mt-4 text-sm text-texto-suave">

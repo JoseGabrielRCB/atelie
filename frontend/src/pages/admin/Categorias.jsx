@@ -5,7 +5,7 @@ import { useCategorias } from "../../hooks/useCategorias";
 import { useAdminPecas } from "../../hooks/useAdminPecas";
 import { useOrdenacao, ordenarPor } from "../../hooks/useOrdenacao";
 import { useSelecao } from "../../hooks/useSelecao";
-import { CabecalhoOrdenavel } from "../../components/admin/CabecalhoOrdenavel";
+import { CabecalhoOrdenavel, OrdenarMobile } from "../../components/admin/CabecalhoOrdenavel";
 import NovaCategoriaModal from "../../components/admin/NovaCategoriaModal";
 import Modal from "../../components/admin/Modal";
 import EditarPecaModal from "../../components/admin/EditarPecaModal";
@@ -128,8 +128,6 @@ export default function Categorias() {
       itens,
       resumo,
       cascata,
-      // Single: digitar o nome da categoria; em massa: digitar EXCLUIR.
-      confirmacaoTexto: cats.length === 1 ? cats[0].nome : "EXCLUIR",
       alvos: cats.map((c) => ({ id: c.id, rotulo: `Categoria "${c.nome}"` })),
       excluir: excluirCategoria,
     });
@@ -189,8 +187,15 @@ export default function Categorias() {
               aoExcluir={() => pedirExclusao(selecionadas)}
               aoLimpar={sel.limpar}
             />
-            <div className="overflow-x-auto rounded-lg border border-borda">
-              <table className="w-full text-left text-sm">
+            <OrdenarMobile
+              id="ordenar-categorias"
+              className="mb-3"
+              ordenacao={ordCat.ordenacao}
+              aoOrdenar={ordCat.alternar}
+              colunas={[{ coluna: "nome", rotulo: "Categoria" }]}
+            />
+            <div className="sm:overflow-x-auto sm:rounded-lg sm:border sm:border-borda">
+              <table className="tabela-cartoes w-full text-left text-sm">
                 <thead className="border-b border-borda text-texto-suave">
                   <tr>
                     <th className="w-10 px-4 py-3">
@@ -259,8 +264,20 @@ export default function Categorias() {
         )}
 
         {pecas.length > 0 && (
-          <div className="overflow-x-auto rounded-lg border border-borda">
-            <table className="w-full text-left text-sm">
+          <>
+          <OrdenarMobile
+            id="ordenar-vitrine"
+            className="mb-3"
+            ordenacao={ordVit.ordenacao}
+            aoOrdenar={ordVit.alternar}
+            colunas={[
+              { coluna: "nome", rotulo: "Peça" },
+              { coluna: "categoria", rotulo: "Categoria" },
+              { coluna: "ativo", rotulo: "Status" },
+            ]}
+          />
+          <div className="sm:overflow-x-auto sm:rounded-lg sm:border sm:border-borda">
+            <table className="tabela-cartoes w-full text-left text-sm">
               <thead className="border-b border-borda text-texto-suave">
                 <tr>
                   <CabecalhoOrdenavel
@@ -287,20 +304,20 @@ export default function Categorias() {
               <tbody className="divide-y divide-borda">
                 {pecas.map((p) => (
                   <tr key={p.id}>
-                    <td className="px-4 py-3">
+                    <td className="cel-principal px-4 py-3">
                       <p className="font-medium text-texto">{p.nome}</p>
                     </td>
-                    <td className="px-4 py-3 text-texto-suave">
+                    <td className="px-4 py-3 text-texto-suave" data-rotulo="Categoria">
                       {p.categoria_nome}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" data-rotulo="Status">
                       {p.ativo ? (
                         <Selo cor="verde">Ativa</Selo>
                       ) : (
                         <Selo cor="cinza">Oculta</Selo>
                       )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="cel-acoes px-4 py-3">
                       <div className="flex items-center justify-end gap-2">
                         <button
                           type="button"
@@ -336,6 +353,7 @@ export default function Categorias() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
 
@@ -376,7 +394,6 @@ export default function Categorias() {
         itens={exclusao?.itens ?? []}
         resumo={exclusao?.resumo ?? ""}
         cascata={exclusao?.cascata ?? false}
-        confirmacaoTexto={exclusao?.confirmacaoTexto ?? null}
         alvos={exclusao?.alvos ?? []}
         excluir={exclusao?.excluir}
         aoConcluir={aoConcluirExclusao}
@@ -391,8 +408,8 @@ function LinhaCategoria({ categoria, salvando, selecionada, caixa, onRenomear, o
 
   return (
     <tr className={selecionada ? "bg-acento/5" : ""}>
-      <td className="px-4 py-3">{caixa}</td>
-      <td className="px-4 py-3">
+      <td className="cel-selecao px-4 py-3">{caixa}</td>
+      <td className="cel-principal px-4 py-3">
         <input
           value={nome}
           onChange={(e) => setNome(e.target.value)}
@@ -400,8 +417,8 @@ function LinhaCategoria({ categoria, salvando, selecionada, caixa, onRenomear, o
           className={campoCategoriaClasse}
         />
       </td>
-      <td className="px-4 py-3 text-xs text-texto-suave">/{categoria.slug}</td>
-      <td className="px-4 py-3">
+      <td className="px-4 py-3 text-xs text-texto-suave" data-rotulo="Atalho">/{categoria.slug}</td>
+      <td className="cel-acoes px-4 py-3">
         <div className="flex items-center justify-end gap-2">
           <button
             type="button"

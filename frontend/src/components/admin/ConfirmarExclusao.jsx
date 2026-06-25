@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { AlertTriangle, Trash2 } from "lucide-react";
 import Modal from "./Modal";
-import { BotaoSecundario, inputClasse } from "./ui";
+import { BotaoSecundario } from "./ui";
 
 // Confirmação de exclusão reutilizável (um ou vários itens). Lista TUDO o que
 // será removido, agrupado por item-pai (com dependentes em cascata aninhados) e
@@ -11,9 +11,8 @@ import { BotaoSecundario, inputClasse } from "./ui";
 // Props:
 // - itens: [{ chave, titulo, linhas?: string[], vazio?: bool }] — o que será removido.
 // - resumo: string (ex.: "Total: 2 categorias, 2 peças, 4 variações, 3 imagens").
-// - cascata: bool — exige confirmação reforçada (categorias/peças).
-// - confirmacaoTexto: string|null — palavra exata a digitar (ex.: nome da categoria
-//   ou "EXCLUIR"); se ausente e cascata=true, usa um checkbox "entendo".
+// - cascata: bool — exige confirmação reforçada (categorias/peças): marcar um
+//   checkbox "entendo que é irreversível". Não é preciso digitar nada.
 // - alvos: [{ id, rotulo }] — itens a excluir (1 ou vários).
 // - excluir: async (id) => void — remove UM alvo.
 // - aoConcluir: ({ sucesso, falhas }) => void — invalida queries / dá feedback.
@@ -24,12 +23,10 @@ export default function ConfirmarExclusao({
   itens = [],
   resumo = "",
   cascata = false,
-  confirmacaoTexto = null,
   alvos = [],
   excluir,
   aoConcluir,
 }) {
-  const [palavra, setPalavra] = useState("");
   const [marcado, setMarcado] = useState(false);
   const [fase, setFase] = useState("confirmar"); // confirmar | executando | resultado
   const [progresso, setProgresso] = useState({ feito: 0, total: 0 });
@@ -41,7 +38,6 @@ export default function ConfirmarExclusao({
   if (aberto !== abertoAntes) {
     setAbertoAntes(aberto);
     if (aberto) {
-      setPalavra("");
       setMarcado(false);
       setFase("confirmar");
       setProgresso({ feito: 0, total: 0 });
@@ -49,11 +45,9 @@ export default function ConfirmarExclusao({
     }
   }
 
-  const precisaPalavra = cascata && Boolean(confirmacaoTexto);
-  const precisaCheck = cascata && !confirmacaoTexto;
-  const liberado =
-    (!precisaPalavra || palavra.trim() === String(confirmacaoTexto).trim()) &&
-    (!precisaCheck || marcado);
+  // Cascata (categorias/peças) pede só um checkbox "entendo" — sem digitar nada.
+  const precisaCheck = cascata;
+  const liberado = !precisaCheck || marcado;
 
   async function executar() {
     setFase("executando");
@@ -126,22 +120,6 @@ export default function ConfirmarExclusao({
             <p className="border-t border-borda pt-3 text-sm font-semibold text-texto">
               {resumo}
             </p>
-          )}
-
-          {precisaPalavra && (
-            <div>
-              <label htmlFor="conf-palavra" className="mb-1 block text-sm text-texto">
-                Para confirmar, digite{" "}
-                <strong>{confirmacaoTexto}</strong>:
-              </label>
-              <input
-                id="conf-palavra"
-                value={palavra}
-                onChange={(e) => setPalavra(e.target.value)}
-                autoComplete="off"
-                className={inputClasse + " sm:max-w-xs"}
-              />
-            </div>
           )}
 
           {precisaCheck && (

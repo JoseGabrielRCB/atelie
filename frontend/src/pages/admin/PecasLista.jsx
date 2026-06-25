@@ -11,7 +11,7 @@ import { descreverPeca, resumoTotais } from "../../lib/exclusao";
 import Preco from "../../components/Preco";
 import { Carregando, Erro, Vazio } from "../../components/Estado";
 import { Feedback, Selo, inputClasse } from "../../components/admin/ui";
-import { CabecalhoOrdenavel } from "../../components/admin/CabecalhoOrdenavel";
+import { CabecalhoOrdenavel, OrdenarMobile } from "../../components/admin/CabecalhoOrdenavel";
 import { CaixaTodos, CaixaLinha, BarraSelecao } from "../../components/admin/Selecao";
 import ConfirmarExclusao from "../../components/admin/ConfirmarExclusao";
 import NovaPecaModal from "../../components/admin/NovaPecaModal";
@@ -96,7 +96,6 @@ export default function PecasLista() {
       itens,
       resumo,
       cascata,
-      confirmacaoTexto: pecasAlvo.length === 1 ? null : "EXCLUIR",
       alvos: pecasAlvo.map((p) => ({ id: p.id, rotulo: `Peça "${p.nome}"` })),
       excluir: excluirPeca,
     });
@@ -208,8 +207,20 @@ export default function PecasLista() {
           aoExcluir={() => pedirExclusao(selecionadas)}
           aoLimpar={sel.limpar}
         />
-        <div className="overflow-x-auto rounded-lg border border-borda">
-          <table className="w-full min-w-[640px] border-collapse text-sm">
+        <OrdenarMobile
+          className="mb-3"
+          ordenacao={ordenacao}
+          aoOrdenar={alternar}
+          colunas={[
+            { coluna: "nome", rotulo: "Peça" },
+            { coluna: "categoria", rotulo: "Categoria" },
+            { coluna: "preco", rotulo: "Preço" },
+            { coluna: "tipo", rotulo: "Tipo" },
+            { coluna: "ativo", rotulo: "Vitrine" },
+          ]}
+        />
+        <div className="sm:overflow-x-auto sm:rounded-lg sm:border sm:border-borda">
+          <table className="tabela-cartoes w-full min-w-[640px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-borda bg-superficie text-left text-texto-suave">
                 <th className="w-10 px-4 py-3">
@@ -267,7 +278,7 @@ export default function PecasLista() {
                       (marcada ? "bg-acento/5" : "hover:bg-fundo")
                     }
                   >
-                    <td className="px-4 py-3">
+                    <td className="cel-selecao px-4 py-3">
                       <CaixaLinha
                         id={p.id}
                         estaSelecionado={sel.estaSelecionado}
@@ -275,24 +286,28 @@ export default function PecasLista() {
                         rotulo={`Selecionar ${p.nome}`}
                       />
                     </td>
-                    <td className="px-4 py-3 font-medium text-texto">{p.nome}</td>
-                    <td className="px-4 py-3 text-texto-suave">
+                    <td className="cel-principal px-4 py-3 font-medium text-texto">
+                      <span className="block max-w-[18rem] truncate" title={p.nome}>
+                        {p.nome}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-texto-suave" data-rotulo="Categoria">
                       {p.categoria_nome}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" data-rotulo="Preço">
                       <Preco valor={p.preco} />
                     </td>
-                    <td className="px-4 py-3 text-texto-suave">
+                    <td className="px-4 py-3 text-texto-suave" data-rotulo="Tipo">
                       {p.tipo === "sob_medida" ? "Sob medida" : "Pronta"}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" data-rotulo="Vitrine">
                       {p.ativo ? (
                         <Selo cor="verde">Ativa</Selo>
                       ) : (
                         <Selo cor="cinza">Oculta</Selo>
                       )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" data-rotulo="Estoque">
                       {semVariacoes ? (
                         <span className="text-texto-suave">—</span>
                       ) : temEsgotada ? (
@@ -301,7 +316,7 @@ export default function PecasLista() {
                         <Selo cor="verde">OK</Selo>
                       )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="cel-acoes px-4 py-3">
                       <div className="flex justify-end gap-3 whitespace-nowrap">
                         <button
                           type="button"
@@ -364,7 +379,6 @@ export default function PecasLista() {
         itens={exclusao?.itens ?? []}
         resumo={exclusao?.resumo ?? ""}
         cascata={exclusao?.cascata ?? false}
-        confirmacaoTexto={exclusao?.confirmacaoTexto ?? null}
         alvos={exclusao?.alvos ?? []}
         excluir={exclusao?.excluir}
         aoConcluir={aoConcluirExclusao}

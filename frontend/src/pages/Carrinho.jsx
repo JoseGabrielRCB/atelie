@@ -147,7 +147,8 @@ export default function Carrinho() {
               onChange={(e) => setNome(e.target.value)}
               maxLength={80}
               autoComplete="name"
-              className="w-full rounded-lg border border-borda bg-superficie px-4 py-3 text-texto placeholder:text-texto-suave focus:border-acento-escuro focus:outline-none focus:ring-2 focus:ring-acento-escuro/30"
+              placeholder="Ex.: Maria Silva"
+              className="w-full rounded-lg border border-borda bg-superficie px-4 py-3 text-texto placeholder:italic placeholder:text-texto-suave/70 focus:border-acento-escuro focus:outline-none focus:ring-2 focus:ring-acento-escuro/30"
             />
             {erros.nome && (
               <p className="mt-1 text-sm text-erro">{erros.nome}</p>
@@ -168,7 +169,8 @@ export default function Carrinho() {
               onChange={(e) => setContato(e.target.value)}
               maxLength={100}
               autoComplete="tel"
-              className="w-full rounded-lg border border-borda bg-superficie px-4 py-3 text-texto placeholder:text-texto-suave focus:border-acento-escuro focus:outline-none focus:ring-2 focus:ring-acento-escuro/30"
+              placeholder="Ex.: (67) 99999-9999 ou maria@email.com"
+              className="w-full rounded-lg border border-borda bg-superficie px-4 py-3 text-texto placeholder:italic placeholder:text-texto-suave/70 focus:border-acento-escuro focus:outline-none focus:ring-2 focus:ring-acento-escuro/30"
             />
             {erros.contato && (
               <p className="mt-1 text-sm text-erro">{erros.contato}</p>

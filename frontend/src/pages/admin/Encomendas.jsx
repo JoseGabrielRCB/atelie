@@ -5,7 +5,7 @@ import { Eye, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { useAdminEncomendas } from "../../hooks/useAdminEncomendas";
 import { useOrdenacao, ordenarPor } from "../../hooks/useOrdenacao";
 import { useSelecao } from "../../hooks/useSelecao";
-import { CabecalhoOrdenavel } from "../../components/admin/CabecalhoOrdenavel";
+import { CabecalhoOrdenavel, OrdenarMobile } from "../../components/admin/CabecalhoOrdenavel";
 import { CaixaTodos, CaixaLinha, BarraSelecao } from "../../components/admin/Selecao";
 import ConfirmarExclusao from "../../components/admin/ConfirmarExclusao";
 import { plural, resumoTotais } from "../../lib/exclusao";
@@ -100,7 +100,6 @@ export default function Encomendas() {
       itens,
       resumo: resumoTotais({ encomendas: encomendas.length, imagens: totalImg }),
       cascata: false,
-      confirmacaoTexto: null,
       alvos: encomendas.map((e) => ({ id: e.id, rotulo: `Encomenda de "${e.nome}"` })),
       excluir: excluirEncomenda,
     });
@@ -144,8 +143,20 @@ export default function Encomendas() {
           aoExcluir={() => pedirExclusao(selecionadas)}
           aoLimpar={sel.limpar}
         />
-        <div className="overflow-x-auto rounded-lg border border-borda">
-          <table className="w-full text-left text-sm">
+        <OrdenarMobile
+          className="mb-3"
+          ordenacao={ord.ordenacao}
+          aoOrdenar={ord.alternar}
+          colunas={[
+            { coluna: "nome", rotulo: "Cliente" },
+            { coluna: "contato", rotulo: "Contato" },
+            { coluna: "prazo_desejado", rotulo: "Prazo" },
+            { coluna: "status", rotulo: "Status" },
+            { coluna: "criado_em", rotulo: "Recebida em" },
+          ]}
+        />
+        <div className="sm:overflow-x-auto sm:rounded-lg sm:border sm:border-borda">
+          <table className="tabela-cartoes w-full text-left text-sm">
             <thead className="border-b border-borda text-texto-suave">
               <tr>
                 <th className="w-10 px-4 py-3">
@@ -176,7 +187,7 @@ export default function Encomendas() {
                       : ""
                   }
                 >
-                  <td className="px-4 py-3">
+                  <td className="cel-selecao px-4 py-3">
                     <CaixaLinha
                       id={e.id}
                       estaSelecionado={sel.estaSelecionado}
@@ -184,16 +195,20 @@ export default function Encomendas() {
                       rotulo={`Selecionar encomenda de ${e.nome}`}
                     />
                   </td>
-                  <td className="px-4 py-3 font-medium text-texto">{e.nome}</td>
-                  <td className="px-4 py-3 text-texto-suave">{formatarContato(e.contato)}</td>
-                  <td className="px-4 py-3 text-texto-suave">{dataCurta(e.prazo_desejado)}</td>
-                  <td className="px-4 py-3">
+                  <td className="cel-principal px-4 py-3 font-medium text-texto">
+                    <span className="block max-w-[16rem] truncate" title={e.nome}>
+                      {e.nome}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-texto-suave" data-rotulo="Contato">{formatarContato(e.contato)}</td>
+                  <td className="px-4 py-3 text-texto-suave" data-rotulo="Prazo">{dataCurta(e.prazo_desejado)}</td>
+                  <td className="px-4 py-3" data-rotulo="Status">
                     <Selo cor={STATUS[e.status]?.cor ?? "neutro"}>
                       {STATUS[e.status]?.rotulo ?? e.status}
                     </Selo>
                   </td>
-                  <td className="px-4 py-3 text-texto-suave">{dataCurta(e.criado_em)}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 text-texto-suave" data-rotulo="Recebida em">{dataCurta(e.criado_em)}</td>
+                  <td className="cel-acoes px-4 py-3">
                     <div className="flex justify-end">
                       <button
                         type="button"
@@ -220,7 +235,6 @@ export default function Encomendas() {
         itens={exclusao?.itens ?? []}
         resumo={exclusao?.resumo ?? ""}
         cascata={exclusao?.cascata ?? false}
-        confirmacaoTexto={exclusao?.confirmacaoTexto ?? null}
         alvos={exclusao?.alvos ?? []}
         excluir={exclusao?.excluir}
         aoConcluir={aoConcluirExclusao}
@@ -245,6 +259,7 @@ function DetalheEncomenda({ id, aoFechar }) {
   const [erro, setErro] = useState("");
   const [ok, setOk] = useState("");
   const [lightbox, setLightbox] = useState(null); // índice da imagem aberta
+  const [confirmarExclusao, setConfirmarExclusao] = useState(false);
 
   const detalheQ = useQuery({
     queryKey: ["admin", "encomenda", String(id)],
@@ -264,14 +279,11 @@ function DetalheEncomenda({ id, aoFechar }) {
     onError: (e) => setErro(e.message),
   });
 
-  const excluirMut = useMutation({
-    mutationFn: () => excluirEncomenda(id),
-    onSuccess: () => {
-      invalidar();
-      aoFechar();
-    },
-    onError: (e) => setErro(e.message),
-  });
+  function aoConcluirExclusao({ falhas }) {
+    invalidar();
+    if (falhas.length) setErro("Não foi possível excluir a encomenda. Tente novamente.");
+    else aoFechar();
+  }
 
   if (detalheQ.isLoading) return <Carregando texto="Carregando..." />;
   if (detalheQ.isError)
@@ -353,12 +365,9 @@ function DetalheEncomenda({ id, aoFechar }) {
       <div className="flex flex-col gap-3 border-t border-borda pt-4 sm:flex-row sm:justify-between">
         <BotaoPerigo
           type="button"
-          disabled={excluirMut.isPending}
           onClick={() => {
             setErro("");
-            if (window.confirm("Excluir esta encomenda? Esta ação não pode ser desfeita.")) {
-              excluirMut.mutate();
-            }
+            setConfirmarExclusao(true);
           }}
         >
           Excluir encomenda
@@ -367,6 +376,24 @@ function DetalheEncomenda({ id, aoFechar }) {
           Fechar
         </BotaoPrimario>
       </div>
+
+      <ConfirmarExclusao
+        aberto={confirmarExclusao}
+        aoFechar={() => setConfirmarExclusao(false)}
+        titulo="Excluir encomenda"
+        itens={[
+          {
+            chave: `enc-${id}`,
+            titulo: `Encomenda de "${e.nome}"`,
+            linhas: imagens.length
+              ? [`${imagens.length} ${imagens.length === 1 ? "imagem de referência" : "imagens de referência"}`]
+              : [],
+          },
+        ]}
+        alvos={[{ id, rotulo: `Encomenda de "${e.nome}"` }]}
+        excluir={excluirEncomenda}
+        aoConcluir={aoConcluirExclusao}
+      />
 
       {lightbox !== null && (
         <LightboxImagens

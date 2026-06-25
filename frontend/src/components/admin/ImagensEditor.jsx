@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { enviarImagem, atualizarImagem, excluirImagem } from "../../lib/api";
+import ConfirmarExclusao from "./ConfirmarExclusao";
 import { BotaoPrimario, Feedback, Selo } from "./ui";
 
 // Gestão de imagens da peça: upload (multipart), marcar principal e remover.
@@ -10,6 +11,7 @@ export default function ImagensEditor({ peca }) {
   const [arquivo, setArquivo] = useState(null);
   const [principal, setPrincipal] = useState(false);
   const [erro, setErro] = useState("");
+  const [exclusao, setExclusao] = useState(null); // imagem a remover
 
   const invalidar = () => {
     qc.invalidateQueries({ queryKey: ["admin", "peca", String(peca.id)] });
@@ -42,11 +44,10 @@ export default function ImagensEditor({ peca }) {
     onError: (e) => setErro(e.message),
   });
 
-  const excluirMut = useMutation({
-    mutationFn: excluirImagem,
-    onSuccess: invalidar,
-    onError: (e) => setErro(e.message),
-  });
+  function aoConcluirExclusao({ falhas }) {
+    invalidar();
+    if (falhas.length) setErro("Não foi possível remover a imagem. Tente novamente.");
+  }
 
   function aoEnviar() {
     setErro("");
@@ -104,8 +105,7 @@ export default function ImagensEditor({ peca }) {
                     type="button"
                     onClick={() => {
                       setErro("");
-                      if (window.confirm("Remover esta imagem?"))
-                        excluirMut.mutate(img.id);
+                      setExclusao(img);
                     }}
                     className="text-xs text-erro hover:underline"
                   >
@@ -147,6 +147,20 @@ export default function ImagensEditor({ peca }) {
           {enviarMut.isPending ? "Enviando..." : "Enviar imagem"}
         </BotaoPrimario>
       </div>
+
+      <ConfirmarExclusao
+        aberto={Boolean(exclusao)}
+        aoFechar={() => setExclusao(null)}
+        titulo="Excluir imagem"
+        itens={
+          exclusao
+            ? [{ chave: `img-${exclusao.id}`, titulo: exclusao.principal ? "Imagem principal da peça" : "Imagem da peça" }]
+            : []
+        }
+        alvos={exclusao ? [{ id: exclusao.id, rotulo: "Imagem da peça" }] : []}
+        excluir={excluirImagem}
+        aoConcluir={aoConcluirExclusao}
+      />
     </div>
   );
 }

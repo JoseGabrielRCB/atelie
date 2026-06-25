@@ -79,11 +79,12 @@ frontend/
     │   ├── Header.jsx (logo), Apresentacao.jsx (hero da home), PecaCard.jsx, Filtro.jsx, SeletorVariacao.jsx,
     │   ├── Galeria.jsx (carretel de imagens da peça), ItemCarrinho.jsx, Preco.jsx, Estado.jsx   # (cliente + compartilhados)
     │   └── admin/
-    │       ├── AdminLayout.jsx       # layout do PAINEL (nav + sair) — não aparece no cliente
+    │       ├── AdminLayout.jsx       # layout do PAINEL (cabeçalho + <AdminNav/> + sair) — não aparece no cliente
+│       ├── AdminNav.jsx          # navegação agrupada (5 itens; dropdown desktop hover+clique+teclado; sanfona mobile; por papel)
     │       ├── RotaProtegida.jsx     # guard: sem token → /admin/login
     │       ├── ui.jsx                # BotaoPrimario/Secundario/Perigo, Campo, Feedback, Selo, inputClasse
     │       ├── Modal.jsx             # modal acessível reutilizável (foco preso, Esc, clique fora, portal)
-    │       ├── CabecalhoOrdenavel.jsx # <th> clicável (seta), usa useOrdenacao
+    │       ├── CabecalhoOrdenavel.jsx # <th> clicável (seta) + OrdenarMobile (controle "Ordenar por" no mobile), usa useOrdenacao
     │       ├── Selecao.jsx           # CaixaTodos/CaixaLinha (checkboxes) + BarraSelecao (ação em massa)
     │       ├── SeletorCor.jsx        # seletor de cor c/ paleta salva (swatches) + "Nova cor" (react-colorful) → POST /cores/
     │       ├── CampoPreco.jsx        # input de preço com máscara BRL (centavos), prefixo R$, teto 1.000.000
@@ -120,14 +121,16 @@ frontend/
 
 | Rota                | Componente   | Descrição |
 |---------------------|--------------|-----------|
-| `/admin/login`      | `Login`      | Login (usuário/senha). Fora do layout do painel. Já autenticado → redireciona. |
+| `/admin/login`      | `Login`      | Login multiusuário (usuário/senha). Fora do layout do painel. Após entrar, o `AuthContext` lê `GET /me/`. Já autenticado → redireciona. |
+| `/admin/senha`      | `TrocarSenha` | Troca de senha. Quando a senha é **provisória**, o `RotaProtegida` traz o usuário para cá e só libera o painel após definir a nova (valida tudo de uma vez; limpa `senha_provisoria` no backend). |
+| `/admin/funcionarios` | `Funcionarios` | **Só Dono.** Tabela ordenável (nome, usuário, status, financeiro, criado em) com busca e truncamento+tooltip. "Novo funcionário" em modal (nome, usuário, e-mail opcional, senha provisória, interruptor "Liberar financeiro"). Ações por linha: ativar/desativar, resetar senha (gera provisória e mostra ao Dono), liberar/revogar financeiro, excluir (`ConfirmarExclusao`). |
 | `/admin`            | `Dashboard`  | Cartões (peças, ativas/ocultas, variações, esgotadas, categorias, destaques, encomendas novas, **Vendas pagas no mês** → link p/ `/admin/vendas`, **Pedidos aguardando pagamento**) + **3 gráficos `recharts`** (Peças por categoria — barras; Estoque disponíveis × esgotadas — donut; Encomendas por status — barras) derivados das queries existentes + **caixinha de perguntas** em linguagem natural (`lib/perguntas.js`, intenções por palavra-chave, sem API paga). A seção "Atalhos" foi **removida**. |
 | `/admin/pecas`      | `PecasLista` | Tabela **ordenável** (busca + filtro por categoria), status na vitrine/estoque; "Editar"/"Excluir" (ícones) + atalho de destaque. **Seleção em massa** (checkbox por linha + "todos", barra de ação) e **exclusão com aviso** (`ConfirmarExclusao` lista variações/imagens da peça + "sai dos destaques"; confirmação reforçada por ser cascata). "Nova peça" abre o **modal** (`NovaPecaModal`, `?nova=1`); "Editar" abre `EditarPecaModal` (`?editar=<id>`). Os forms avisam **nome duplicado** junto ao campo Nome (peça é única). |
 | `/admin/pecas/nova` | →redirect    | Redireciona para `/admin/pecas?nova=1` (cadastro em modal). |
 | `/admin/pecas/:id`  | →redirect    | `RedirecionaEdicao` → `/admin/pecas?editar=<id>` (edição em modal). Mantém deep links e o "ver detalhes" das Categorias. |
 | `/admin/estoque`    | `Estoque`    | Tabela **ordenável** de variações; edição por linha com ícone, botões +1/−1 e número manual (nunca < 0); salva via PATCH; destaque/filtro de esgotadas; busca. **Excluir variação** (lixeira) e **seleção em massa** com aviso (`ConfirmarExclusao`). |
-| `/admin/categorias` | `Categorias` | CRUD de categorias (inputs de largura fixa padronizada; "Nova categoria" em **modal**) + controle da vitrine (tabela ordenável com Mostrar/Ocultar). Cada peça tem **olho** (`Eye` → modal SÓ LEITURA `DetalhePecaModal`) e **lápis** separado (`Pencil` → `EditarPecaModal`). **Excluir categoria** (única ou em massa) abre `ConfirmarExclusao` listando as **peças que cairão em cascata** (e suas variações/imagens); confirmação reforçada (digitar o nome da categoria / `EXCLUIR`). |
-| `/admin/cores`      | `Cores`      | CRUD da **paleta de cores** (swatch + nome + hex). "Nova cor"/editar abrem **modal** com picker `react-colorful` (HEX) + nome (máx. 30) + campo hex (`#RRGGBB`). Tabela **ordenável** (`useOrdenacao`). Exclusão via `ConfirmarExclusao`. Erros PT-BR do backend (nome duplicado / hex inválido) exibidos no form. |
+| `/admin/categorias` | `Categorias` | CRUD de categorias (inputs de largura fixa padronizada; "Nova categoria" em **modal**) + controle da vitrine (tabela ordenável com Mostrar/Ocultar). Cada peça tem **olho** (`Eye` → modal SÓ LEITURA `DetalhePecaModal`) e **lápis** separado (`Pencil` → `EditarPecaModal`). **Excluir categoria** (única ou em massa) abre `ConfirmarExclusao` listando as **peças que cairão em cascata** (e suas variações/imagens); confirmação reforçada por **checkbox** "entendo que é irreversível" (sem digitar nada). |
+| `/admin/cores`      | `Cores`      | CRUD da **paleta de cores** (swatch + nome + hex). "Nova cor"/editar abrem **modal** com picker `react-colorful` (HEX) + nome (máx. 30) + campo hex (`#RRGGBB`). Tabela **ordenável** (`useOrdenacao`) com **seleção em massa** (checkbox por linha + "todos" + barra de ação). Exclusão única ou em lote via `ConfirmarExclusao`. Erros PT-BR do backend (nome duplicado / hex inválido) exibidos no form. |
 | `/admin/destaques`  | `Destaques`  | Curadoria das **peças em destaque** da Home. Tabela **ordenável** (nome, categoria, preço, status, destaque) com busca por nome e atalho "Só em destaque". Toggle por peça (ícone `Star`/`StarOff`) via PATCH `{destaque}` (`atualizarPeca`) — invalida `["admin","pecas"]` e `["pecas"]`. Contador "N peças em destaque" + lembrete suave acima de 8 (a Home mostra até 8). Aviso "em destaque, mas oculta" quando a peça está em destaque mas `ativo=false`. |
 | `/admin/encomendas` | `Encomendas` | Tabela **ordenável** das encomendas sob medida (cliente, contato **formatado `(DD) NÚMERO`**, prazo, status, data) com destaque das **novas** (`recebido`). **Seleção em massa** + exclusão com aviso (`ConfirmarExclusao` lista as imagens de referência que serão removidas). Detalhe em **modal**: dados, descrição, galeria das imagens (abrem em **popup/lightbox** na própria página, com setas e Esc), seletor de status (PATCH) e excluir (confirmação). |
 | `/admin/vendas`     | `Vendas`     | **Pedidos do pagamento online** (Mercado Pago) — tabela **ordenável** (Cliente, Itens=contagem, Total via `Preco`, Status, Data) com filtro por status no cliente (carga completa via `useAdminPedidos`). Selo: `pago`→verde, `aguardando_pagamento`→acento, `expirado`→cinza, `cancelado`→vermelho. Clique na linha / ícone `Eye` abre **modal** de detalhe: cliente (nome+contato), status, total, criado/expira em, **lista de itens** (`peca_nome`, `variacao_descricao`, qtd, `preco_unit` via `Preco`) e os **IDs do Mercado Pago** (`mp_preference_id`, `mp_payment_id`). **SOMENTE LEITURA**: nota explícita de que estorno/cancelamento são feitos no painel do Mercado Pago — sem ações de editar/excluir. |
@@ -279,8 +282,14 @@ pré-renderizadas, ex. `/peca/:id` e `/admin/*`, sobem por CSR). Preencher `SITE
 - **Layouts separados**: cliente e admin têm layouts próprios (`App.jsx` x `AdminLayout.jsx`) —
   o header/carrinho do cliente nunca aparece no admin e vice-versa. Rotas `/admin/*` (exceto
   `/admin/login`) ficam dentro de `<RotaProtegida>`.
-- **Auth do admin**: tokens em `localStorage` (app de admin único); refresh automático no 401;
-  logout limpa tokens. Sem venda/pedido/financeiro no painel (regra de negócio).
+- **Auth do admin (multiusuário)**: tokens JWT em `localStorage`; refresh automático no 401; logout
+  limpa tokens. Após login (e no 1º carregamento com token), o `AuthContext` busca `GET /me/` e expõe
+  `papel`/`ehDono`/`podeFinanceiro` (= dono **ou** `acesso_financeiro`)/`senhaProvisoria`/`usuario` +
+  `recarregarMe`. **Guardas** (`components/admin/RotaProtegida.jsx`): `RequerLogin` (login + espera o
+  `/me/`), `RotaProtegida` (login + se `senhaProvisoria`, força `/admin/senha`), `ExigeDono` e
+  `ExigeFinanceiro` (acesso direto por URL volta ao Resumo). A navegação (`AdminLayout`) e os cartões
+  de Vendas do Dashboard são montados por papel — **mas a segurança é do backend** (esconder é só UX).
+  O Dashboard só busca `/pedidos/` quando `podeFinanceiro` (evita 403 do funcionário).
 - **Cache do Query**: queries do admin usam chaves `["admin", ...]`, separadas das públicas
   (a vitrine vê só ativas; o admin vê todas). Mutações invalidam `["admin","pecas"]` /
   `["admin","peca",id]` / `["categorias"]`.
@@ -301,6 +310,35 @@ pré-renderizadas, ex. `/peca/:id` e `/admin/*`, sobem por CSR). Preencher `SITE
 
 ## Histórico de mudanças
 
+- **2026-06-25** — **Tabelas do admin viram cartões no mobile** (desktop intacto), de forma
+  reutilizável: a `<table>` recebe `tabela-cartoes` e cada `<td>` anota `data-rotulo="…"` +
+  `cel-principal`/`cel-selecao`/`cel-acoes`; o CSS em `index.css` (`@media max-width:639px`) empilha
+  em cartões (título + rótulo:valor + ações no rodapé + checkbox no canto). Novo `OrdenarMobile`
+  (em `CabecalhoOrdenavel.jsx`) dá o "Ordenar por ▾" + inverter no mobile, reusando `useOrdenacao`
+  (ordenação persiste igual ao desktop). Seleção em massa por checkbox no cartão (barra de ação
+  inalterada). Contêiner da tabela só mostra borda/scroll a partir de `sm:` (640px), alinhado ao
+  breakpoint dos cartões. Aplicado a Peças, Estoque, Categorias (2 tabelas), Cores, Destaques,
+  Encomendas, Vendas e Funcionários. Sem mudar dados/rotas/permissões. `npm run build` (SSG) ok.
+- **2026-06-25** — **Navegação do painel agrupada** em `components/admin/AdminNav.jsx` (extraída do
+  `AdminLayout`): 5 itens de topo — Resumo (link), **Catálogo ▾** (Peças/Categorias/Cores/Destaques),
+  Estoque (link), **Pedidos ▾** (Encomendas/Vendas), **Configurações ▾** (Funcionários/WhatsApp).
+  Desktop: dropdown abre por **hover + clique + foco do teclado**, fecha com atraso ~150ms / `Esc` /
+  clique fora; item de topo destacado quando a rota atual é filha. Mobile: **hambúrguer + sanfona**.
+  Visibilidade por papel (Vendas só com financeiro; Configurações só Dono; grupo vazio some).
+  Acessível (`aria-haspopup`/`aria-expanded`, `role=menu/menuitem`, teclado, foco visível; itens são
+  `NavLink`). **Não** mudou rotas, telas nem permissões. `npm run build` (SSG) ok.
+- **2026-06-24** — **Multiusuário com papéis** no painel. `AuthContext` passou a buscar `GET /me/`
+  (papel/`acesso_financeiro`/`senha_provisoria`) e expõe `ehDono`/`podeFinanceiro`/`senhaProvisoria`.
+  Novas guardas em `RotaProtegida.jsx` (`RequerLogin`, `RotaProtegida` com redirecionamento de senha
+  provisória, `ExigeDono`, `ExigeFinanceiro`). Nova tela **`/admin/senha`** (`TrocarSenha`) — troca
+  forçada da senha provisória antes de usar o painel. Nova seção **`/admin/funcionarios`**
+  (`Funcionarios`, só Dono): tabela ordenável + busca, criar funcionário em modal (com senha
+  provisória + interruptor de financeiro), ativar/desativar, resetar senha (mostra a provisória uma
+  vez), liberar/revogar financeiro e excluir (`ConfirmarExclusao`). `AdminLayout` monta a navegação
+  por papel (Vendas só com financeiro; Funcionários e WhatsApp só Dono). Dashboard oculta os cartões
+  de Vendas e só busca `/pedidos/` quando `podeFinanceiro` (sem 403). Novos helpers em `lib/api.js`
+  (`obterMe`, `mudarSenha`, `listarUsuarios`, `criarUsuario`, `atualizarUsuario`, `excluirUsuario`);
+  `useAdminPedidos` aceita `{ enabled }`. `npm run build` (SSG) ok. Backend reforça as permissões.
 - **2026-06-20** — Criação do frontend (área do cliente): Vite + React 19 + Router 7 +
   TanStack Query 5 + Tailwind v4. 3 telas (Vitrine, Detalhe, Carrinho), carrinho com
   localStorage, integração de leitura com a API e envio do pedido pelo WhatsApp. Build de
@@ -454,3 +492,23 @@ pré-renderizadas, ex. `/peca/:id` e `/admin/*`, sobem por CSR). Preencher `SITE
   Desconectar` em `lib/api.js`; item "WhatsApp" no `AdminLayout`. O backend é proxy (chave da
   Evolution nunca chega ao navegador). `lint` (0 erros) e `npm run build` (SSG) ok.
 - **2026-06-22** — `/admin/whatsapp` ganhou seção **WhatsApp do dono**: mostra sempre o número autorizado atual, permite informar novo número em formato internacional (somente dígitos) e exige confirmação antes de salvar. Novos helpers `whatsappDono`/`atualizarWhatsappDono` em `lib/api.js`; `lint` sem erros (warnings antigos de react-refresh) e `npm run build` ok.
+- **2026-06-24** — **Auditoria de conformidade** (telas admin + cliente) à Padronização do `STYLE.md`,
+  só corrigindo desvios (sem redesenho): (1) **Fim dos `window.confirm`** — `VariacoesEditor` e
+  `ImagensEditor` (remover variação/imagem na edição) e o modal de detalhe de **Encomendas** passaram
+  a usar `ConfirmarExclusao`; em **Whatsapp**, "trocar WhatsApp do dono" e "desconectar" usam agora um
+  **modal de confirmação** reutilizando `Modal` (padrão para confirmações que não são exclusão).
+  (2) **Placeholders** de exemplo em **itálico + cor mais suave** e no formato "Ex.: …"
+  (`inputClasse` do admin + `inputClasse` local do cliente em `Carrinho`/`Encomenda`/`Filtro`).
+  (3) **Truncamento + tooltip** (`title`) nas células de Cliente (Encomendas/Vendas) e Peça
+  (`PecasLista`). (4) **Erros sem jargão**: rótulos de estado do painel de WhatsApp deixaram de citar
+  "Evolution" ("Erro no serviço"/"Serviço indisponível"). (5) **Retorno do pagamento**: `Sucesso.jsx`
+  não afirma mais aprovação por query param ("Pedido recebido!" + confirmação via webhook), conforme
+  a regra do `STYLE.md`. Também: botões "Adicionando…"/"Desconectando…" reforçando o anti-duplo-envio.
+  (6) **Seleção em massa em Cores**: a tabela de `/admin/cores` ganhou checkbox por linha + "todos" +
+  barra de ação (exclusão em lote via `ConfirmarExclusao`), alinhando-a às demais tabelas do admin.
+  `npm run build` (SSG) ok. Backend não foi tocado.
+- **2026-06-24** — Exclusão **sem digitar nada**: `ConfirmarExclusao` deixou de exigir digitar o
+  nome do item / a palavra `EXCLUIR`. A confirmação reforçada em cascata (categorias/peças) passou a
+  ser só o **checkbox** "Entendo que esta ação é irreversível"; exclusões simples seguem só com o
+  botão. Removida a prop `confirmacaoTexto` do componente e de todos os chamadores
+  (Categorias/Peças/Estoque/Cores/Encomendas). `npm run build` (SSG) ok.
