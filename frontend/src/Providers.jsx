@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "./context/AuthContext.jsx";
+import { ContaProvider } from "./context/ContaContext.jsx";
 import { CarrinhoProvider } from "./context/CarrinhoContext.jsx";
 
 // Provedores globais (Query + Auth + Carrinho). Usado no cliente e no SSR.
@@ -21,7 +22,9 @@ export default function Providers({ children }) {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <CarrinhoProvider>{children}</CarrinhoProvider>
+        <ContaProvider>
+          <CarrinhoProvider>{children}</CarrinhoProvider>
+        </ContaProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

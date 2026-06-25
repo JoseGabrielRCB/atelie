@@ -24,7 +24,11 @@ vírgula decimal).
 ### Tabelas
 - **Ordenáveis** por qualquer coluna (clique no cabeçalho alterna asc/desc), com a ordenação
   **persistindo** ao paginar/recarregar.
-- **Paginação** sempre que a lista puder crescer.
+- **Paginação** sempre que a lista puder crescer. **Toda tabela/listagem do admin pagina em 10 itens
+  por página** — a paginação é aplicada **depois** de busca/filtro/ordenação (reflete o conjunto já
+  filtrado/ordenado) e **volta à página 1** quando muda a busca/filtro/ordenação. Controles
+  "Anterior/Próxima" + "Página X de Y" + total; funciona igual no desktop (tabela) e no mobile
+  (cartões). Em **seleção em massa**, "selecionar todos" age na **página atual**.
 - **Seleção em massa:** selecionar todas (e por linha) para **ações em lote** (ex.: excluir). Ações que
   só fazem sentido item a item (**ver detalhes**, **editar**) ficam **fora** da seleção em massa.
 - **Texto longo na célula:** truncar com reticências (ex.: "Rua Antônio Emílio de…") e mostrar o
@@ -130,8 +134,17 @@ vírgula decimal).
 
 ## Entradas do cliente (formulários públicos)
 
-Os formulários do cliente (encomenda, carrinho, busca) seguem o mesmo princípio do painel
+Os formulários do cliente (encomenda, carrinho, busca, **conta**) seguem o mesmo princípio do painel
 (entradas restritas, menos cliques), com a identidade do cliente (cantos 8px, `acento-escuro`).
+
+- **Conta do cliente (login/cadastro/perfil):** cadastro e login são **páginas públicas** (não modal —
+  é um fluxo, não uma ação pontual), sob o layout do cliente (com Header). **CPF obrigatório** no
+  cadastro, com **máscara `000.000.000-00` + validação dos dígitos verificadores** em tempo real
+  (espelha o backend); e-mail e telefone também com validação/máscara. Validação **completa** (todos
+  os erros de uma vez, inline + resumo). Em "Minha conta", e-mail e CPF são **somente-leitura** (troca
+  via suporte no MVP). O **checkout exige conta**: deslogado, leva a login/cadastro com `?next=` e
+  volta; logado, mostra um resumo dos dados da conta + "Finalizar compra" (sem recoletar nome/CPF). A
+  sessão do cliente é **separada** da do admin (storage e contexto próprios).
 
 - **Chips de tamanho (Encomenda):** o tamanho é escolhido em **chips** de seleção única
   (P · M · G · GG · Único), não texto livre — um clique seleciona, clicar de novo desmarca.
@@ -289,8 +302,15 @@ Mesma identidade, porém **mais utilitário**: foco em tabelas e formulários cl
 - **Gráficos do painel (Dashboard):** usar `recharts` com a paleta dos tokens (`acento-escuro`
   `#7e4e2e`, `acento` `#b07a56`, `sucesso` `#2e6b49`, `esgotado` `#8c887f`; grade `borda` `#d6cfc4`,
   eixos `texto-suave` `#57534e`). Cartões em `superficie` com borda 8px; "Sem dados ainda." quando
-  vazio. Os gráficos são admin-only e **não** entram na pré-renderização (SSG só processa rotas
-  públicas), então a dependência não quebra o build Node.
+  vazio. **Os números aparecem sem hover**: barras com `LabelList` (valor em cima, cor `texto`
+  `#1a1816`); rosca com o **total no centro** + legenda com os valores. **Altura responsiva**
+  (`h-56 sm:h-64 lg:h-72`, não fixa) e eixos enxutos no mobile; 1 coluna no celular, 2 no desktop. O
+  `Tooltip` é só complemento. Os gráficos são admin-only e **não** entram na pré-renderização (SSG).
+- **Cartões de métrica (Dashboard):** cada cartão tem um **ícone lucide** discreto, número em
+  destaque e rótulo claro (estado **vermelho/`erro`** para esgotadas/encomendas novas/aguardando).
+  São **clicáveis e abrem um `Modal` de detalhe** (lista da métrica com os selos/cores atuais, texto
+  longo truncado) calculado dos dados já carregados — **sem trocar de aba**; o modal pode ter, no
+  rodapé, um link secundário "Abrir a página completa". 2 colunas no mobile.
 
 ## Marca (definida — 20/06/2026)
 - **Nome de exibição:** **Atelie ++** (grafia **sem acento**, igual ao logo — padroniza a marca e
@@ -327,6 +347,16 @@ Mesma identidade, porém **mais utilitário**: foco em tabelas e formulários cl
 - 21/06/2026 — Padrões novos do painel: **paleta de cores** para variações (`SeletorCor` + seção `/admin/cores`, picker `react-colorful`, persiste `cor`+`cor_hex`); **máscara de moeda BRL** com teto R$ 1.000.000 (`CampoPreco`); **contadores de caracteres** (nome 80 / descrição 600); **validação completa** (todos os erros de uma vez, inline + resumo); **olho = só leitura** vs **lápis = editar**; **gráficos do Dashboard** (`recharts`) com a paleta dos tokens (admin-only, fora do SSG).
 - 22/06/2026 — Seção **Vendas** (`/admin/vendas`) só-leitura: tabela ordenável dos pedidos do pagamento online (Mercado Pago) com filtro por status e modal de detalhe (cliente, total/datas, itens, IDs do MP). Sem editar/excluir; nota de que estorno/cancelamento são no painel do MP. Selos `pago`→verde / `aguardando_pagamento`→acento / `expirado`→cinza / `cancelado`→vermelho. Dois cartões de venda no Dashboard. Atualizada a regra antiga "sem telas de venda" do painel.
 - 22/06/2026 — Adicionada a seção **Padronização** (regras-padrão do sistema): Tabelas, Campos, Formulários, Ações destrutivas, Visualizar×editar, Feedback/estados e Erros, mais princípios transversais (menos cliques, reuso de componentes/ícones lucide, formatos BR). A seção "Padrões de componente do painel" passou a ser a implementação dela. (Regras de engenharia — validação no servidor e segredos/dados sensíveis — ficam no `CLAUDE.md`.)
+- 25/06/2026 — **Paginação (10/página) em todas as tabelas do admin** via `usePaginacao` +
+  `Paginacao` (cliente fatia a lista já filtrada/ordenada; volta à página 1 ao mudar filtro;
+  "selecionar todos" = página atual). Registrada a regra "toda tabela do admin pagina em 10".
+- 25/06/2026 — **Resumo (Dashboard)** reorganizado: "Pergunte ao painel" no topo (destaque); cartões
+  de métrica com ícone lucide e **detalhe em modal** (sem trocar de aba); gráficos com **rótulos de
+  valor** (LabelList / total no centro da rosca) e **altura responsiva** no mobile. Registrado o
+  padrão "cartões de métrica abrem detalhe em modal" e "gráficos com valores visíveis".
+- 25/06/2026 — **Conta de cliente com login**: cadastro/login viram **páginas públicas** (não modal),
+  CPF obrigatório (máscara + validação), perfil com e-mail/CPF read-only, e o **checkout passa a exigir
+  conta** (usa os dados da conta + CPF no Mercado Pago). Sessão do cliente separada da do admin.
 - 25/06/2026 — **Tabelas responsivas do admin**: abaixo de 640px cada linha vira um **cartão**
   (rótulo: valor; título = campo principal; ações em botões; checkbox no canto). Transformação única
   via classe `tabela-cartoes` + `data-rotulo`/`cel-principal`/`cel-selecao`/`cel-acoes` (CSS em

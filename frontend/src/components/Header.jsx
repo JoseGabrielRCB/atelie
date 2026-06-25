@@ -1,5 +1,6 @@
 import { Link, NavLink } from "react-router-dom";
 import { useCarrinho } from "../context/CarrinhoContext";
+import { useConta } from "../context/ContaContext";
 
 const LINKS = [
   { para: "/", rotulo: "Início", fim: true },
@@ -16,6 +17,7 @@ function classeNav({ isActive }) {
 
 export default function Header() {
   const { totalItens } = useCarrinho();
+  const { logado, sair } = useConta();
 
   return (
     <header className="sticky top-0 z-30 border-b border-borda bg-fundo/90 backdrop-blur">
@@ -41,6 +43,34 @@ export default function Header() {
             </NavLink>
           ))}
         </nav>
+
+        {/* Conta do cliente: deslogado → Entrar/Criar conta; logado → Minha conta/Sair. */}
+        {logado ? (
+          <div className="flex items-center gap-3">
+            <NavLink to="/conta" className={classeNav}>
+              Minha conta
+            </NavLink>
+            <button
+              type="button"
+              onClick={sair}
+              className="text-sm font-medium text-texto-suave transition hover:text-acento-escuro focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-escuro"
+            >
+              Sair
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3">
+            <NavLink to="/conta/login" className={classeNav}>
+              Entrar
+            </NavLink>
+            <Link
+              to="/conta/cadastro"
+              className="hidden text-sm font-medium text-texto transition hover:text-acento-escuro sm:inline"
+            >
+              Criar conta
+            </Link>
+          </div>
+        )}
 
         <Link
           to="/carrinho"

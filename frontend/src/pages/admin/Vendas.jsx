@@ -3,7 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import { Eye } from "lucide-react";
 import { useAdminPedidos } from "../../hooks/useAdminPedidos";
 import { useOrdenacao, ordenarPor } from "../../hooks/useOrdenacao";
+import { usePaginacao } from "../../hooks/usePaginacao";
 import { CabecalhoOrdenavel, OrdenarMobile } from "../../components/admin/CabecalhoOrdenavel";
+import { Paginacao } from "../../components/admin/Paginacao";
 import Modal from "../../components/admin/Modal";
 import Preco from "../../components/Preco";
 import { obterPedido } from "../../lib/api";
@@ -61,6 +63,10 @@ export default function Vendas() {
     total: (p) => Number(p.total) || 0,
     status: (p) => ORDEM_STATUS.indexOf(p.status),
     criado_em: (p) => p.criado_em,
+  });
+
+  const pag = usePaginacao(lista, {
+    resetKey: `${filtroStatus}|${ord.ordenacao.coluna}|${ord.ordenacao.direcao}`,
   });
 
   const aguardando = todos.filter((p) => p.status === "aguardando_pagamento").length;
@@ -140,7 +146,7 @@ export default function Vendas() {
               </tr>
             </thead>
             <tbody className="divide-y divide-borda">
-              {lista.map((p) => {
+              {pag.itensPagina.map((p) => {
                 const n = contarItens(p);
                 return (
                   <tr
@@ -186,6 +192,14 @@ export default function Vendas() {
             </tbody>
           </table>
         </div>
+        <Paginacao
+          pagina={pag.pagina}
+          totalPaginas={pag.totalPaginas}
+          total={pag.total}
+          porPagina={pag.porPagina}
+          aoMudar={pag.setPagina}
+          rotuloItens="vendas"
+        />
         </>
       )}
 

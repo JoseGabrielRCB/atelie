@@ -4,7 +4,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Eye, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { useAdminEncomendas } from "../../hooks/useAdminEncomendas";
 import { useOrdenacao, ordenarPor } from "../../hooks/useOrdenacao";
+import { usePaginacao } from "../../hooks/usePaginacao";
 import { useSelecao } from "../../hooks/useSelecao";
+import { Paginacao } from "../../components/admin/Paginacao";
 import { CabecalhoOrdenavel, OrdenarMobile } from "../../components/admin/CabecalhoOrdenavel";
 import { CaixaTodos, CaixaLinha, BarraSelecao } from "../../components/admin/Selecao";
 import ConfirmarExclusao from "../../components/admin/ConfirmarExclusao";
@@ -78,7 +80,10 @@ export default function Encomendas() {
   );
 
   const novas = lista.filter((e) => e.status === "recebido").length;
-  const idsVisiveis = lista.map((e) => e.id);
+  const pag = usePaginacao(lista, {
+    resetKey: `${ord.ordenacao.coluna}|${ord.ordenacao.direcao}`,
+  });
+  const idsVisiveis = pag.itensPagina.map((e) => e.id);
   const selecionadas = lista.filter((e) => sel.estaSelecionado(e.id));
 
   function pedirExclusao(encomendas) {
@@ -164,7 +169,7 @@ export default function Encomendas() {
                     ids={idsVisiveis}
                     estaSelecionado={sel.estaSelecionado}
                     definirVarios={sel.definirVarios}
-                    rotulo="Selecionar todas as encomendas"
+                    rotulo="Selecionar todas as encomendas desta página"
                   />
                 </th>
                 <CabecalhoOrdenavel coluna="nome" rotulo="Cliente" ordenacao={ord.ordenacao} aoOrdenar={ord.alternar} />
@@ -176,7 +181,7 @@ export default function Encomendas() {
               </tr>
             </thead>
             <tbody className="divide-y divide-borda">
-              {lista.map((e) => (
+              {pag.itensPagina.map((e) => (
                 <tr
                   key={e.id}
                   className={
@@ -225,6 +230,14 @@ export default function Encomendas() {
             </tbody>
           </table>
         </div>
+        <Paginacao
+          pagina={pag.pagina}
+          totalPaginas={pag.totalPaginas}
+          total={pag.total}
+          porPagina={pag.porPagina}
+          aoMudar={pag.setPagina}
+          rotuloItens="encomendas"
+        />
         </>
       )}
 

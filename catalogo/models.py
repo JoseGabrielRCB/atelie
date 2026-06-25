@@ -5,6 +5,44 @@ from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models
 from django.utils.text import slugify
 
+from .validators import validar_cpf
+
+
+class Cliente(models.Model):
+    """Conta de CLIENTE da loja (1-para-1 com o ``User`` do Django).
+
+    Distinta do staff: cliente tem ``Cliente`` e ``User.is_staff=False`` e NÃO
+    tem ``Perfil`` (que é do dono/funcionário). Usada para compras com login e
+    para preencher o ``payer`` do Mercado Pago (CPF). O e-mail é o login
+    (``User.username == User.email``). Sem endereço/entrega neste MVP.
+    """
+
+    usuario = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="cliente",
+        verbose_name="usuário",
+    )
+    nome = models.CharField("nome", max_length=120)
+    # Guardado SÓ com dígitos (11). Validado pelos dígitos verificadores.
+    cpf = models.CharField(
+        "CPF",
+        max_length=11,
+        unique=True,
+        validators=[validar_cpf],
+        error_messages={"unique": "Já existe uma conta com esse CPF."},
+    )
+    telefone = models.CharField("telefone", max_length=20, blank=True)
+    criado_em = models.DateTimeField("criado em", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "cliente"
+        verbose_name_plural = "clientes"
+        ordering = ["nome"]
+
+    def __str__(self):
+        return f"{self.nome} ({self.usuario.email})"
+
 
 class Perfil(models.Model):
     """Perfil de acesso ao painel (1-para-1 com o ``User`` do Django).
@@ -321,6 +359,17 @@ class Pedido(models.Model):
         EXPIRADO = "expirado", "Expirado"
         CANCELADO = "cancelado", "Cancelado"
 
+    # Conta do cliente que fez a compra (null nos pedidos históricos, anteriores
+    # ao login obrigatório). PROTECT preserva o histórico financeiro.
+    cliente = models.ForeignKey(
+        "Cliente",
+        on_delete=models.PROTECT,
+        related_name="pedidos",
+        null=True,
+        blank=True,
+        verbose_name="cliente",
+    )
+    # Snapshot do nome/contato no momento da compra (admin Vendas lê daqui).
     nome = models.CharField("nome", max_length=80)
     contato = models.CharField("contato", max_length=100)
     status = models.CharField(

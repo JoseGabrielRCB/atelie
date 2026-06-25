@@ -5,6 +5,8 @@ import { useAdminPecas } from "../../hooks/useAdminPecas";
 import { useSelecao } from "../../hooks/useSelecao";
 import { atualizarVariacao, excluirVariacao } from "../../lib/api";
 import { useOrdenacao, ordenarPor } from "../../hooks/useOrdenacao";
+import { usePaginacao } from "../../hooks/usePaginacao";
+import { Paginacao } from "../../components/admin/Paginacao";
 import { resumoTotais } from "../../lib/exclusao";
 import { CabecalhoOrdenavel, OrdenarMobile } from "../../components/admin/CabecalhoOrdenavel";
 import { CaixaTodos, CaixaLinha, BarraSelecao } from "../../components/admin/Selecao";
@@ -255,13 +257,17 @@ export default function Estoque() {
     estoque: (v) => v.estoque,
   });
 
+  const pag = usePaginacao(ordenadas, {
+    resetKey: `${busca}|${soEsgotadas}|${ordenacao.coluna}|${ordenacao.direcao}`,
+  });
+
   if (pecasQ.isLoading) return <Carregando texto="Carregando estoque..." />;
   if (pecasQ.isError)
     return (
       <Erro mensagem={pecasQ.error.message} aoTentarNovamente={pecasQ.refetch} />
     );
 
-  const idsVisiveis = ordenadas.map((v) => v.id);
+  const idsVisiveis = pag.itensPagina.map((v) => v.id);
   const selecionadas = ordenadas.filter((v) => sel.estaSelecionado(v.id));
 
   return (
@@ -329,7 +335,7 @@ export default function Estoque() {
                     ids={idsVisiveis}
                     estaSelecionado={sel.estaSelecionado}
                     definirVarios={sel.definirVarios}
-                    rotulo="Selecionar todas as variações"
+                    rotulo="Selecionar todas as variações desta página"
                   />
                 </th>
                 <CabecalhoOrdenavel
@@ -362,7 +368,7 @@ export default function Estoque() {
               </tr>
             </thead>
             <tbody>
-              {ordenadas.map((v) => (
+              {pag.itensPagina.map((v) => (
                 <LinhaEstoque
                   key={v.id}
                   v={v}
@@ -382,6 +388,14 @@ export default function Estoque() {
             </tbody>
           </table>
         </div>
+        <Paginacao
+          pagina={pag.pagina}
+          totalPaginas={pag.totalPaginas}
+          total={pag.total}
+          porPagina={pag.porPagina}
+          aoMudar={pag.setPagina}
+          rotuloItens="variações"
+        />
         </>
       )}
 

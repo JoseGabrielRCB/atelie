@@ -7,6 +7,8 @@ import { useCategorias } from "../../hooks/useCategorias";
 import { useSelecao } from "../../hooks/useSelecao";
 import { excluirPeca, atualizarPeca } from "../../lib/api";
 import { useOrdenacao, ordenarPor } from "../../hooks/useOrdenacao";
+import { usePaginacao } from "../../hooks/usePaginacao";
+import { Paginacao } from "../../components/admin/Paginacao";
 import { descreverPeca, resumoTotais } from "../../lib/exclusao";
 import Preco from "../../components/Preco";
 import { Carregando, Erro, Vazio } from "../../components/Estado";
@@ -141,7 +143,12 @@ export default function PecasLista() {
     tipo: (p) => p.tipo,
     ativo: (p) => (p.ativo ? 1 : 0),
   });
-  const idsVisiveis = lista.map((p) => p.id);
+  const pag = usePaginacao(lista, {
+    resetKey: `${buscaDeb}|${categoria}|${ordenacao.coluna}|${ordenacao.direcao}`,
+  });
+  // "Selecionar todos" age na PÁGINA atual; a seleção em massa (exclusão) usa o
+  // conjunto inteiro selecionado (persistido entre páginas).
+  const idsVisiveis = pag.itensPagina.map((p) => p.id);
   const selecionadas = lista.filter((p) => sel.estaSelecionado(p.id));
 
   return (
@@ -228,7 +235,7 @@ export default function PecasLista() {
                     ids={idsVisiveis}
                     estaSelecionado={sel.estaSelecionado}
                     definirVarios={sel.definirVarios}
-                    rotulo="Selecionar todas as peças"
+                    rotulo="Selecionar todas as peças desta página"
                   />
                 </th>
                 <CabecalhoOrdenavel
@@ -266,7 +273,7 @@ export default function PecasLista() {
               </tr>
             </thead>
             <tbody>
-              {lista.map((p) => {
+              {pag.itensPagina.map((p) => {
                 const temEsgotada = (p.variacoes ?? []).some((v) => v.esgotado);
                 const semVariacoes = (p.variacoes ?? []).length === 0;
                 const marcada = sel.estaSelecionado(p.id);
@@ -369,6 +376,14 @@ export default function PecasLista() {
             </tbody>
           </table>
         </div>
+        <Paginacao
+          pagina={pag.pagina}
+          totalPaginas={pag.totalPaginas}
+          total={pag.total}
+          porPagina={pag.porPagina}
+          aoMudar={pag.setPagina}
+          rotuloItens="peças"
+        />
         </>
       )}
 

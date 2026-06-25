@@ -4,7 +4,9 @@ import { Eye, Pencil, Plus, Trash2 } from "lucide-react";
 import { useCategorias } from "../../hooks/useCategorias";
 import { useAdminPecas } from "../../hooks/useAdminPecas";
 import { useOrdenacao, ordenarPor } from "../../hooks/useOrdenacao";
+import { usePaginacao } from "../../hooks/usePaginacao";
 import { useSelecao } from "../../hooks/useSelecao";
+import { Paginacao } from "../../components/admin/Paginacao";
 import { CabecalhoOrdenavel, OrdenarMobile } from "../../components/admin/CabecalhoOrdenavel";
 import NovaCategoriaModal from "../../components/admin/NovaCategoriaModal";
 import Modal from "../../components/admin/Modal";
@@ -114,7 +116,13 @@ export default function Categorias() {
     }
   );
 
-  const idsCategorias = categorias.map((c) => c.id);
+  const pagCat = usePaginacao(categorias, {
+    resetKey: `${ordCat.ordenacao.coluna}|${ordCat.ordenacao.direcao}`,
+  });
+  const pagVit = usePaginacao(pecas, {
+    resetKey: `${ordVit.ordenacao.coluna}|${ordVit.ordenacao.direcao}`,
+  });
+  const idsCategorias = pagCat.itensPagina.map((c) => c.id);
   const pecasTodas = pecasQ.data ?? [];
 
   // Abre o modal de confirmação para uma ou várias categorias.
@@ -203,7 +211,7 @@ export default function Categorias() {
                         ids={idsCategorias}
                         estaSelecionado={sel.estaSelecionado}
                         definirVarios={sel.definirVarios}
-                        rotulo="Selecionar todas as categorias"
+                        rotulo="Selecionar todas as categorias desta página"
                       />
                     </th>
                     <CabecalhoOrdenavel
@@ -217,7 +225,7 @@ export default function Categorias() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-borda">
-                  {categorias.map((c) => (
+                  {pagCat.itensPagina.map((c) => (
                     <LinhaCategoria
                       key={c.id}
                       categoria={c}
@@ -241,6 +249,14 @@ export default function Categorias() {
                 </tbody>
               </table>
             </div>
+            <Paginacao
+              pagina={pagCat.pagina}
+              totalPaginas={pagCat.totalPaginas}
+              total={pagCat.total}
+              porPagina={pagCat.porPagina}
+              aoMudar={pagCat.setPagina}
+              rotuloItens="categorias"
+            />
           </>
         )}
       </div>
@@ -302,7 +318,7 @@ export default function Categorias() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-borda">
-                {pecas.map((p) => (
+                {pagVit.itensPagina.map((p) => (
                   <tr key={p.id}>
                     <td className="cel-principal px-4 py-3">
                       <p className="font-medium text-texto">{p.nome}</p>
@@ -353,6 +369,14 @@ export default function Categorias() {
               </tbody>
             </table>
           </div>
+          <Paginacao
+            pagina={pagVit.pagina}
+            totalPaginas={pagVit.totalPaginas}
+            total={pagVit.total}
+            porPagina={pagVit.porPagina}
+            aoMudar={pagVit.setPagina}
+            rotuloItens="peças"
+          />
           </>
         )}
       </div>

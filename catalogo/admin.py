@@ -4,6 +4,7 @@ from django.contrib import admin
 
 from .models import (
     Categoria,
+    Cliente,
     Cor,
     Encomenda,
     EncomendaImagem,
@@ -16,6 +17,13 @@ from .models import (
     Perfil,
     Variacao,
 )
+
+
+@admin.register(Cliente)
+class ClienteAdmin(admin.ModelAdmin):
+    list_display = ["nome", "usuario", "telefone", "criado_em"]
+    search_fields = ["nome", "usuario__email", "cpf"]
+    readonly_fields = ["criado_em"]
 
 
 @admin.register(Perfil)

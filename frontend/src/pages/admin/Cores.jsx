@@ -5,7 +5,9 @@ import { Plus, Pencil, Trash2 } from "lucide-react";
 import { criarCor, atualizarCor, excluirCor } from "../../lib/api";
 import { useCores } from "../../hooks/useCores";
 import { useOrdenacao, ordenarPor } from "../../hooks/useOrdenacao";
+import { usePaginacao } from "../../hooks/usePaginacao";
 import { useSelecao } from "../../hooks/useSelecao";
+import { Paginacao } from "../../components/admin/Paginacao";
 import { hexValido, normalizarHex } from "../../lib/cores";
 import { CabecalhoOrdenavel, OrdenarMobile } from "../../components/admin/CabecalhoOrdenavel";
 import { CaixaTodos, CaixaLinha, BarraSelecao } from "../../components/admin/Selecao";
@@ -151,7 +153,10 @@ export default function Cores() {
     hex: (c) => c.hex,
   });
 
-  const idsVisiveis = cores.map((c) => c.id);
+  const pag = usePaginacao(cores, {
+    resetKey: `${ordenacao.coluna}|${ordenacao.direcao}`,
+  });
+  const idsVisiveis = pag.itensPagina.map((c) => c.id);
   const selecionadas = cores.filter((c) => sel.estaSelecionado(c.id));
 
   function abrirNova() {
@@ -252,7 +257,7 @@ export default function Cores() {
                       ids={idsVisiveis}
                       estaSelecionado={sel.estaSelecionado}
                       definirVarios={sel.definirVarios}
-                      rotulo="Selecionar todas as cores"
+                      rotulo="Selecionar todas as cores desta página"
                     />
                   </th>
                   <th className="w-16 px-4 py-3 font-medium">Cor</th>
@@ -272,7 +277,7 @@ export default function Cores() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-borda">
-                {cores.map((c) => (
+                {pag.itensPagina.map((c) => (
                   <tr key={c.id} className={sel.estaSelecionado(c.id) ? "bg-acento/5" : ""}>
                     <td className="cel-selecao px-4 py-3">
                       <CaixaLinha
@@ -316,6 +321,14 @@ export default function Cores() {
               </tbody>
             </table>
           </div>
+          <Paginacao
+            pagina={pag.pagina}
+            totalPaginas={pag.totalPaginas}
+            total={pag.total}
+            porPagina={pag.porPagina}
+            aoMudar={pag.setPagina}
+            rotuloItens="cores"
+          />
         </>
       )}
 

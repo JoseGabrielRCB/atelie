@@ -10,6 +10,7 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .models import (
     HEX_COR_VALIDATOR,
     Categoria,
+    Cliente,
     Cor,
     Encomenda,
     EncomendaImagem,
@@ -21,8 +22,27 @@ from .models import (
     Variacao,
 )
 from .permissions import perfil_efetivo
+from .validators import cpf_valido, so_digitos
 
 User = get_user_model()
+
+
+def _cpf_formatado(cpf: str) -> str:
+    """Formata 11 dígitos como 000.000.000-00 (para exibição)."""
+    d = so_digitos(cpf)
+    if len(d) != 11:
+        return cpf or ""
+    return f"{d[:3]}.{d[3:6]}.{d[6:9]}-{d[9:]}"
+
+
+def _validar_nome_pessoa(value):
+    """Nome de pessoa: obrigatório e SEM números (espelha o filtro da UI)."""
+    value = (value or "").strip()
+    if not value:
+        raise serializers.ValidationError("Informe o seu nome.")
+    if any(c.isdigit() for c in value):
+        raise serializers.ValidationError("O nome não pode conter números.")
+    return value
 
 # Teto de preço aceito (em reais). Acima disso, provavelmente é erro de digitação.
 PRECO_MAXIMO = 1000000
@@ -295,22 +315,9 @@ class ItemCheckoutSerializer(serializers.Serializer):
 
 
 class CheckoutSerializer(serializers.Serializer):
-    """Entrada do endpoint público de checkout."""
+    """Entrada do checkout. Exige conta de cliente: nome/contato/CPF vêm da conta
+    autenticada (não do corpo)."""
 
-    nome = serializers.CharField(
-        max_length=80,
-        error_messages={
-            "blank": "Informe o seu nome.",
-            "required": "Informe o seu nome.",
-        },
-    )
-    contato = serializers.CharField(
-        max_length=100,
-        error_messages={
-            "blank": "Informe um contato (telefone/WhatsApp).",
-            "required": "Informe um contato (telefone/WhatsApp).",
-        },
-    )
     itens = ItemCheckoutSerializer(many=True)
 
     def validate_itens(self, itens):
@@ -470,3 +477,102 @@ class MudarSenhaSerializer(serializers.Serializer):
         except DjangoValidationError as exc:
             raise serializers.ValidationError(list(exc.messages))
         return value
+
+
+# --------------------------------------------------------------------------
+# Conta do CLIENTE da loja (cadastro/login/perfil) — separada do staff
+# --------------------------------------------------------------------------
+
+
+class ContaCadastroSerializer(serializers.Serializer):
+    """Cadastro público de cliente: cria User (e-mail = login) + Cliente."""
+
+    nome = serializers.CharField(max_length=120)
+    email = serializers.EmailField()
+    cpf = serializers.CharField()
+    telefone = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    senha = serializers.CharField(write_only=True)
+
+    def validate_nome(self, value):
+        return _validar_nome_pessoa(value)
+
+    def validate_email(self, value):
+        value = (value or "").strip().lower()
+        if User.objects.filter(username__iexact=value).exists() or User.objects.filter(
+            email__iexact=value
+        ).exists():
+            raise serializers.ValidationError("Já existe uma conta com esse e-mail.")
+        return value
+
+    def validate_cpf(self, value):
+        digitos = so_digitos(value)
+        if not cpf_valido(digitos):
+            raise serializers.ValidationError("CPF inválido.")
+        if Cliente.objects.filter(cpf=digitos).exists():
+            raise serializers.ValidationError("Já existe uma conta com esse CPF.")
+        return digitos
+
+    def validate_senha(self, value):
+        try:
+            validate_password(value)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(list(exc.messages))
+        return value
+
+
+class ContaTokenSerializer(TokenObtainPairSerializer):
+    """Login do cliente por e-mail+senha. Recusa contas de staff.
+
+    O cliente envia ``email``+``password``. Como o ``User.username`` é o próprio
+    e-mail, mapeamos ``email`` → ``username`` para o ``authenticate`` padrão.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Troca o campo de login "username" por "email".
+        self.fields.pop(self.username_field, None)
+        self.fields["email"] = serializers.EmailField(write_only=True)
+
+    def validate(self, attrs):
+        attrs[self.username_field] = (attrs.get("email") or "").strip().lower()
+        data = super().validate(attrs)  # autentica; barra User.is_active=False
+        user = self.user
+        if user.is_staff or getattr(user, "perfil", None) is not None or not hasattr(
+            user, "cliente"
+        ):
+            raise serializers.ValidationError(
+                "Esta conta não é de cliente. Use o painel para entrar."
+            )
+        return data
+
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+        token["audiencia"] = "cliente"
+        return token
+
+
+class ClienteSerializer(serializers.ModelSerializer):
+    """Leitura dos dados da conta do cliente (/api/conta/me/)."""
+
+    email = serializers.EmailField(source="usuario.email", read_only=True)
+    cpf = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Cliente
+        fields = ["nome", "email", "cpf", "telefone", "criado_em"]
+        read_only_fields = fields
+
+    def get_cpf(self, obj):
+        return _cpf_formatado(obj.cpf)
+
+
+class ClienteUpdateSerializer(serializers.ModelSerializer):
+    """Edição do perfil do cliente — só nome e telefone (e-mail/CPF travados)."""
+
+    class Meta:
+        model = Cliente
+        fields = ["nome", "telefone"]
+
+    def validate_nome(self, value):
+        return _validar_nome_pessoa(value)

@@ -135,6 +135,14 @@ MESMO ateliê (não é multi-loja): um Dono gerencia contas de Funcionários. Mi
 e `0009` (data migration: cria `Perfil(papel='dono')` para superusers existentes — o dono atual não
 perde acesso). Registrado no Django Admin.
 
+**Cliente** — conta de **cliente da loja** (compra com login; **OneToOne** com `User`). Campos:
+`usuario` (OneToOne→User, `CASCADE`, related_name `cliente`), `nome` (max 120), `cpf` (CharField 11,
+**único**, guardado **só dígitos**, validado por dígitos verificadores em `catalogo/validators.py`),
+`telefone` (max 20, blank), `criado_em`. O **e-mail é o login** (`User.username == User.email`,
+`is_staff=False`). Distinção de audiência: **cliente** tem `Cliente` e NÃO tem `Perfil`; **staff** tem
+`Perfil`. Um token vale só no seu contexto (reforçado por `EhCliente` / pelas permissões de staff).
+Migration `0010`. Registrado no Django Admin. (Sem endereço/entrega neste MVP — "combinar à parte".)
+
 ### Papéis e permissões (a fonte da verdade é o backend)
 
 `catalogo/permissions.py` lê `request.user.perfil` e expõe os helpers `perfil_efetivo(user)`
@@ -147,6 +155,8 @@ ativo**, p/ não travar o acesso), `eh_dono(user)` e `pode_financeiro(user)`. Cl
 - **`PodeFinanceiro`** — Dono, ou Funcionário com `acesso_financeiro=True`. Aplicada em `pedidos` (Vendas).
 - **`SoDono`** — só Dono (não liberável). Aplicada em `usuarios` e nas Configurações de WhatsApp
   (`/whatsapp/status|conectar|desconectar|dono`).
+- **`EhCliente`** — conta de CLIENTE (tem `Cliente`, sem `Perfil`, `is_staff=False`). Aplicada em
+  `/api/conta/me|senha|pedidos/` e no **checkout**. Staff é recusado (e cliente é recusado no painel).
 
 Funcionário **inativo** (`ativo=False`) é bloqueado: a desativação sincroniza `User.is_active=False`
 (o `JWTAuthentication` recusa o token) **e** `perfil_efetivo` devolve `None` (permissões negam). O
@@ -222,17 +232,16 @@ Base: `/api/`. Respostas de lista são **paginadas** (`PageNumberPagination`, `P
   Status inicial sempre `recebido`. Resposta `201`: `{ "id", "status", "mensagem" }` (NÃO ecoa
   nome/contato). Erros `400` com chaves por campo em PT-BR (ex.: `{ "imagens": ["..."] }`).
   Anti-spam: throttle com escopo `encomendas` (`10/hour`) só nessa ação → `429` se exceder.
-- `POST /api/checkout/` — **público** (`AllowAny`): cria um `Pedido` de peças prontas + a
-  preferência de pagamento no Mercado Pago. Body JSON: `{ "nome", "contato", "itens": [{
-  "variacao_id", "quantidade" }, ...] }`. Valida peça ativa/pronta, quantidade ≥ 1 e
-  disponibilidade; recalcula preço/total no servidor; cria o pedido `aguardando_pagamento`
-  (`expira_em = agora + 30min`) **sem** decrementar estoque. Resposta `201`:
-  `{ "pedido_id", "init_point" }` (URL de checkout do MP para redirecionar). Erros:
-  `400 {"itens": [...]}` (variação inexistente / peça sob_medida ou inativa), `400 {"nome"|"contato"|"itens": [...]}`
-  (campos), `409 {"disponibilidade": ["Estoque insuficiente..."]}`, `502 {"detalhe": [...]}`
-  (falha ao falar com o MP). Throttle escopo `encomendas` (`10/hour`).
-  `back_urls` apontam para o frontend: `/pagamento/sucesso`, `/pagamento/pendente`,
-  `/pagamento/falha` (o MP anexa query params `?status=&payment_id=&external_reference=&...`).
+- `POST /api/checkout/` — **exige conta de cliente** (`EhCliente`): cria um `Pedido` de peças
+  prontas + a preferência de pagamento no Mercado Pago. Body JSON: `{ "itens": [{ "variacao_id",
+  "quantidade" }, ...] }` — **nome/contato/CPF vêm da conta autenticada** (não do corpo). Grava
+  `pedido.cliente` e `nome`/`contato` (snapshot) a partir do `Cliente`. Valida peça ativa/pronta,
+  quantidade ≥ 1 e disponibilidade; recalcula preço/total no servidor; cria o pedido
+  `aguardando_pagamento` (`expira_em = agora + 30min`) **sem** decrementar estoque. Envia o **payer**
+  ao MP (`name`/`email`/`identification` CPF). Resposta `201`: `{ "pedido_id", "init_point" }`.
+  Erros: `401` (anônimo), `403` (staff), `400 {"itens": [...]}` (variação inexistente / peça
+  sob_medida ou inativa), `409 {"disponibilidade": [...]}`, `502 {"detalhe": [...]}`. Throttle
+  escopo `encomendas` (`10/hour`). `back_urls`: `/pagamento/sucesso|pendente|falha`.
 - `POST /api/webhooks/mercadopago/` — **público** (`AllowAny`, CSRF-exempt): recebe notificações
   `payment` do Mercado Pago. Valida a assinatura HMAC (`x-signature` + `x-request-id` +
   `MP_WEBHOOK_SECRET`) → `401` se inválida. Idempotente via `EventoPagamento`. Confirma o
@@ -296,6 +305,22 @@ Base: `/api/`. Respostas de lista são **paginadas** (`PageNumberPagination`, `P
   `acesso_financeiro` e o reset de senha: `{"resetar_senha": true}` gera uma provisória aleatória e a
   devolve UMA vez em `senha_provisoria_gerada` (ou `{"senha": "..."}` para definir manualmente).
   Validações PT-BR: usuário/e-mail únicos, senha mínima. Não ecoa nem loga senhas.
+
+### Conta do cliente da loja (login separado do staff)
+
+- `POST /api/conta/cadastro/` (`AllowAny`): `{ nome, email, cpf, telefone?, senha }` → cria
+  `User` (`username=email`, `is_staff=False`) + `Cliente`. Valida e-mail/CPF únicos, CPF (dígitos
+  verificadores) e senha mínima (PT-BR). Não ecoa CPF/senha. Throttle escopo `encomendas`.
+- `POST /api/conta/login/` → JWT do cliente (login por **e-mail**+senha). **Recusa staff** (e o
+  painel `auth/login` recusa cliente). Claim `audiencia="cliente"`.
+- `GET /api/conta/me/` (`EhCliente`) → `{ nome, email, cpf (formatado), telefone, criado_em }`;
+  `PATCH` edita **só `nome`/`telefone`** (e-mail e CPF são read-only no MVP).
+- `POST /api/conta/senha/` (`EhCliente`) — `{ senha_atual, nova_senha }`.
+- `GET /api/conta/pedidos/` (`EhCliente`) — histórico **só do próprio** cliente (paginado).
+- Refresh: reusa `POST /api/auth/refresh/` (SimpleJWT é genérico; o front guarda os tokens do
+  cliente em chave de storage separada da do admin).
+- **Fora do MVP** (anotado, não implementado): verificação de e-mail e recuperação de senha por
+  e-mail (exigem serviço de e-mail); endereço/entrega ("combinar à parte").
 
 ### Como autenticar
 
@@ -440,6 +465,17 @@ Django por `http://backend:8000`.
 
 ## Histórico de mudanças
 
+- **2026-06-25** — **Conta de cliente com login** (revertendo o "cliente sem login"; para enriquecer
+  a compra/Mercado Pago). Novo model **`Cliente`** (OneToOne com `User`; `nome`, `cpf` único+validado,
+  `telefone`; e-mail = login; `is_staff=False`, sem `Perfil`) — migration `0010` (+ `Pedido.cliente`
+  FK `PROTECT` nulo p/ histórico). Novo `catalogo/validators.py` (`validar_cpf`/`cpf_valido`). Nova
+  permissão **`EhCliente`** (separa cliente de staff nos dois sentidos). Endpoints `POST /conta/cadastro/`
+  (`AllowAny`), `POST /conta/login/` (recusa staff), `GET/PATCH /conta/me/` (edita só nome/telefone),
+  `POST /conta/senha/`, `GET /conta/pedidos/` (só os próprios). **`CheckoutView` agora exige
+  `EhCliente`**: tira nome/contato do corpo (vêm da conta), grava `pedido.cliente` e envia o **payer**
+  (CPF) ao MP (`criar_preferencia(..., payer=...)`). `test_pagamentos.py` ajustado (checkout autentica
+  cliente) + novo `test_conta.py` (16 testes). Senhas/CPF/telefone nunca logados. Fora do MVP
+  (anotado): verificação/recuperação de e-mail e endereço/entrega. Suíte: **131 testes passando**.
 - **2026-06-24** — **Multiusuário com papéis fixos** (mesmo ateliê; NÃO é multi-loja). Novo model
   **`Perfil`** (OneToOne com `User`; `papel` dono/funcionario, `ativo`, `acesso_financeiro`,
   `senha_provisoria`, `criado_por`, `criado_em`) — migrations `0008` (modelo) + `0009` (cria

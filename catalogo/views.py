@@ -27,6 +27,7 @@ from .comandos import interpretar
 from .estoque import disponibilidade
 from .models import (
     Categoria,
+    Cliente,
     Cor,
     Encomenda,
     EncomendaImagem,
@@ -40,6 +41,7 @@ from .models import (
     Variacao,
 )
 from .permissions import (
+    EhCliente,
     EhEquipeAtiva,
     LeituraPublicaEscritaEquipe,
     PodeFinanceiro,
@@ -55,6 +57,10 @@ from .notificacoes import (
 from .serializers import (
     CategoriaSerializer,
     CheckoutSerializer,
+    ClienteSerializer,
+    ClienteUpdateSerializer,
+    ContaCadastroSerializer,
+    ContaTokenSerializer,
     CorSerializer,
     EncomendaCreateSerializer,
     EncomendaSerializer,
@@ -214,13 +220,14 @@ class EncomendaViewSet(viewsets.ModelViewSet):
 class CheckoutView(APIView):
     """Cria um Pedido de peças prontas e a preferência de pagamento no MP.
 
-    Público (AllowAny). O preço/total é SEMPRE recalculado no servidor a partir
-    do banco; valores enviados pelo cliente são ignorados. O estoque NÃO é
-    decrementado aqui — só após o pagamento aprovado (webhook). Throttle
-    anti-abuso reaproveita o escopo ``encomendas``.
+    Exige **conta de cliente** (``EhCliente``): nome/contato/CPF vêm da conta
+    autenticada (o corpo só traz ``itens``). O preço/total é SEMPRE recalculado
+    no servidor; valores do cliente são ignorados. O estoque NÃO é decrementado
+    aqui — só após o pagamento aprovado (webhook). Throttle anti-abuso reaproveita
+    o escopo ``encomendas``.
     """
 
-    permission_classes = [AllowAny]
+    permission_classes = [EhCliente]
     throttle_scope = "encomendas"
     throttle_classes = [ScopedRateThrottle]
 
@@ -228,6 +235,7 @@ class CheckoutView(APIView):
         serializer = CheckoutSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         dados = serializer.validated_data
+        cliente = request.user.cliente
 
         # Agrega quantidades por variação (caso o cliente repita o id).
         pedido_por_variacao = {}
@@ -275,10 +283,12 @@ class CheckoutView(APIView):
         total = Decimal("0.00")
         itens_mp = []
 
+        contato = cliente.telefone or cliente.usuario.email
         with transaction.atomic():
             pedido = Pedido.objects.create(
-                nome=dados["nome"],
-                contato=dados["contato"],
+                cliente=cliente,
+                nome=cliente.nome,
+                contato=contato,
                 status=Pedido.Status.AGUARDANDO_PAGAMENTO,
                 total=Decimal("0.00"),
                 expira_em=expira_em,
@@ -307,6 +317,11 @@ class CheckoutView(APIView):
         # Cria a preferência no Mercado Pago (fora da transação de banco).
         base_url = settings.MP_PUBLIC_URL.rstrip("/")
         notification_url = f"{base_url}/api/webhooks/mercadopago/"
+        payer = {
+            "name": cliente.nome,
+            "email": cliente.usuario.email,
+            "identification": {"type": "CPF", "number": cliente.cpf},
+        }
         try:
             resposta = pagamentos.criar_preferencia(
                 pedido,
@@ -314,6 +329,7 @@ class CheckoutView(APIView):
                 base_url=base_url,
                 frontend_url=settings.FRONTEND_URL,
                 notification_url=notification_url,
+                payer=payer,
             )
         except Exception:
             # Não vaza detalhes do provedor; o pedido fica pendente e expira.
@@ -749,3 +765,95 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         saida = UsuarioSerializer(user).data
         saida.update(extra)
         return Response(saida)
+
+
+# --------------------------------------------------------------------------
+# Conta do CLIENTE da loja (cadastro/login/perfil/histórico) — separada do staff
+# --------------------------------------------------------------------------
+
+
+class ContaCadastroView(APIView):
+    """Cadastro público de cliente: cria User (e-mail = login) + Cliente.
+
+    Não ecoa CPF/senha. Throttle anti-abuso reaproveita o escopo ``encomendas``.
+    """
+
+    permission_classes = [AllowAny]
+    throttle_scope = "encomendas"
+    throttle_classes = [ScopedRateThrottle]
+
+    def post(self, request, *args, **kwargs):
+        serializer = ContaCadastroSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        dados = serializer.validated_data
+        with transaction.atomic():
+            user = User.objects.create_user(
+                username=dados["email"],
+                email=dados["email"],
+                password=dados["senha"],
+                first_name=dados["nome"][:150],
+                is_staff=False,
+            )
+            Cliente.objects.create(
+                usuario=user,
+                nome=dados["nome"],
+                cpf=dados["cpf"],
+                telefone=dados.get("telefone", "") or "",
+            )
+        return Response(
+            {"mensagem": "Conta criada com sucesso! Faça login para continuar."},
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class ContaLoginView(TokenObtainPairView):
+    """Login do cliente (e-mail + senha) → JWT. Recusa contas de staff."""
+
+    serializer_class = ContaTokenSerializer
+
+
+class ContaMeView(APIView):
+    """Dados da conta do cliente logado. GET (ver) / PATCH (editar nome/telefone)."""
+
+    permission_classes = [EhCliente]
+
+    def get(self, request, *args, **kwargs):
+        return Response(ClienteSerializer(request.user.cliente).data)
+
+    def patch(self, request, *args, **kwargs):
+        cliente = request.user.cliente
+        serializer = ClienteUpdateSerializer(cliente, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(ClienteSerializer(cliente).data)
+
+
+class ContaSenhaView(APIView):
+    """Troca da própria senha (cliente logado)."""
+
+    permission_classes = [EhCliente]
+
+    def post(self, request, *args, **kwargs):
+        serializer = MudarSenhaSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        user = request.user
+        if not user.check_password(serializer.validated_data["senha_atual"]):
+            raise serializers.ValidationError({"senha_atual": ["Senha atual incorreta."]})
+        user.set_password(serializer.validated_data["nova_senha"])
+        user.save(update_fields=["password"])
+        return Response({"mensagem": "Senha atualizada com sucesso."})
+
+
+class ContaPedidosView(viewsets.ReadOnlyModelViewSet):
+    """Histórico de pedidos do PRÓPRIO cliente (somente leitura)."""
+
+    serializer_class = PedidoSerializer
+    permission_classes = [EhCliente]
+    filterset_fields = ["status"]
+
+    def get_queryset(self):
+        return (
+            Pedido.objects.filter(cliente=self.request.user.cliente)
+            .prefetch_related("itens__variacao__peca")
+            .all()
+        )
