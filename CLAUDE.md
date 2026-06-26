@@ -375,8 +375,56 @@ Base: `/api/`. Respostas de lista são **paginadas** (`PageNumberPagination`, `P
   - `GET /api/whatsapp/dono/` → `{ numero, configurado }`; `PATCH/PUT /api/whatsapp/dono/` com `{ "numero" }` atualiza `WHATSAPP_DONO`, salva no `.env` e aplica em memória (admin/JWT).
 - `POST /api/auth/login/` — body `{ "username", "password" }` → `{ "access", "refresh" }`. O token
   inclui as claims `papel` e `acesso_financeiro` (cru) para o front decidir o que mostrar; o backend
-  reforça as permissões de qualquer forma. Recusa conta inativa.
+  reforça as permissões de qualquer forma. Recusa conta inativa. Em falha, **mensagem genérica**
+  ("Usuário ou senha inválidos.") — não revela qual campo errou (anti-enumeração). **Throttle por IP**
+  (escopo `login`, ~10/min) contra brute-force → `429` se exceder.
 - `POST /api/auth/refresh/` — body `{ "refresh" }` → `{ "access" }`.
+- `POST /api/auth/logout/` — body `{ "refresh" }` → `205`. **Revoga (blacklist) o refresh de fato**
+  (app `token_blacklist`), encerrando a sessão mesmo com o access expirado. Idempotente (refresh já
+  inválido/expirado também devolve sucesso). Vale para admin e cliente.
+
+### JWT (expiração, revogação, claims)
+
+- **Access curto** (`ACCESS_TOKEN_LIFETIME` = **30 min**, env `JWT_ACCESS_MIN`) + **refresh** 7 dias
+  (`JWT_REFRESH_DAYS`); o front renova o access sozinho em `401`.
+- **Logout revoga o refresh** (blacklist). **Rotação desligada por padrão** (`JWT_ROTATE_REFRESH`,
+  default False) para evitar corrida de refresh concorrente no SPA; quando ligada,
+  `BLACKLIST_AFTER_ROTATION=True` revoga o refresh antigo. Migrations do `token_blacklist`.
+- **Claims sem PII**: o token leva só `papel`/`acesso_financeiro` (admin) e `audiencia="cliente"` —
+  **nunca** CPF, senha ou segredos.
+- **Tokens no front (risco anotado):** hoje os tokens ficam em `localStorage` (chaves separadas
+  admin/cliente), o que é **vulnerável a XSS** (script malicioso poderia lê-los). Mitigações no lugar:
+  CSP/headers de segurança (nosniff/X-Frame-Options/Referrer-Policy), sanitização do React por padrão,
+  e a revogação no logout. **Melhoria futura (obra maior, não obrigatória agora):** migrar para cookie
+  `httpOnly` + `Secure` + `SameSite` (exige CSRF para escrita e backend emitir/ler o cookie).
+
+### Cache HTTP (privacidade)
+
+`CacheControlMiddleware` (`catalogo/middleware.py`) define o `Cache-Control`:
+- **Privado → `no-store, private`** (navegador/proxy/CDN não guardam): qualquer requisição com header
+  `Authorization` (JWT), as rotas de auth/conta/identidade (`/api/auth`, `/api/conta`, `/api/me`) e o
+  Django admin (`/admin`). Cobre conta, pedidos, todo o admin, login/refresh/logout.
+- **Público → `public, max-age=60`** + `Vary: Authorization` (não mistura audiências na mesma URL):
+  `GET` do catálogo em `/api/*` sem autenticação (vitrine/peças). Cache curto, opcional.
+- `/media` e `/static` não são tocados (storage/CDN cuidam). As páginas de **conta/admin do front são
+  CSR** (não entram no SSG), então o CDN das rotas públicas nunca pré-renderiza/cacheia conteúdo privado.
+
+### Throttling (anti-abuso)
+
+Configurado no DRF (`settings.REST_FRAMEWORK`); o `429` traz `Retry-After`. Limites por IP (anônimo)
+ou por usuário (logado):
+
+- **Global**: `AnonRateThrottle` **120/min** (navegação pública por IP) + `UserRateThrottle`
+  **240/min** (logado, por usuário). Aplica-se a todo endpoint que não sobrescreve `throttle_classes`.
+- **Login** (`/auth/login/` e `/conta/login/`): escopo `login` **10/min por IP** (anti brute-force).
+- **Públicos sensíveis** (escopo `encomendas` **10/hora por IP**): `POST /encomendas/` (create),
+  `POST /conta/cadastro/`, `POST /cupom/validar/`, `POST /checkout/`.
+- **Webhooks** (`/webhooks/mercadopago/` e `/webhooks/whatsapp/`): **isentos** (`throttle_classes=[]`)
+  — o provedor reenvia e a idempotência (`EventoPagamento`/`MensagemWhatsApp`) já protege contra
+  repetição; estrangular quebraria entregas legítimas.
+- **IP real atrás de proxy**: por padrão usa `REMOTE_ADDR` (seguro). Em produção atrás de N proxies
+  confiáveis, defina `NUM_PROXIES=N` (env) para o DRF ler o `X-Forwarded-For` na posição certa — sem
+  confiar cegamente no header.
 
 ### Contas do painel (multiusuário)
 
@@ -578,6 +626,23 @@ Django por `http://backend:8000`.
 
 ## Histórico de mudanças
 
+- **2026-06-25** — **Privacidade / cache HTTP / JWT**. Auditados logs e o exception handler: **sem
+  PII/segredo** (só status codes; sem stack trace ao usuário em produção). Novo
+  `CacheControlMiddleware`: conteúdo privado (auth/conta/admin/JWT) → `no-store, private`; catálogo
+  público → `public, max-age=60` + `Vary: Authorization`. JWT: **access 30 min** (env) + **logout que
+  revoga o refresh** (`POST /auth/logout/` + app `token_blacklist`; rotação opt-in via env). Front
+  chama o logout ao sair (revoga + limpa storage). Claims sem PII (só papel/audiência). Nota
+  registrada sobre tokens em `localStorage` (risco de XSS; mitigado por CSP/headers; cookie httpOnly
+  como melhoria futura). Novo `test_privacidade_cache.py` (10). Suíte: **242 testes**.
+- **2026-06-25** — **Throttling (anti-abuso)**. Global no DRF: `AnonRateThrottle` 120/min (por IP) +
+  `UserRateThrottle` 240/min (por usuário). Escopo `login` **10/min por IP** nos dois logins
+  (`/auth/login/`, `/conta/login/`) contra brute-force; login agora responde **mensagem genérica**
+  ("Usuário/E-mail ou senha inválidos.") — anti-enumeração. Públicos sensíveis seguem no escopo
+  `encomendas` (10/hora): encomenda, cadastro, cupom/validar, checkout. **Webhooks MP/WhatsApp
+  isentos** (`throttle_classes=[]`) — o provedor reenvia e a idempotência protege. `NUM_PROXIES` (env)
+  para ler o IP real do `X-Forwarded-For` atrás de proxy (padrão: `REMOTE_ADDR`). Novo
+  `test_throttling.py` (9: 429 em login/cadastro, webhook não estrangulado, uso normal ok, mensagem
+  genérica). Suíte: **232 testes**. `.env.example`/CLAUDE.md atualizados.
 - **2026-06-25** — **Endurecimento de produção** (item #4 da auditoria; env-gated, dev intacto).
   `SECRET_KEY` só do ambiente e **obrigatória/forte em produção** (boot falha sem ela; sem default
   inseguro); `ALLOWED_HOSTS`/`CORS_ALLOWED_ORIGINS` recusam vazio/`*` com `DEBUG=False`. HTTPS/HSTS

@@ -461,6 +461,9 @@ class TokenComPapelSerializer(TokenObtainPairSerializer):
     """Login JWT que injeta ``papel``/``acesso_financeiro`` nas claims e bloqueia
     contas inativas (perfil ``ativo=False``)."""
 
+    # Mensagem genérica (não revela QUAL campo errou — anti-enumeração), em PT-BR.
+    default_error_messages = {"no_active_account": "Usuário ou senha inválidos."}
+
     @classmethod
     def get_token(cls, user):
         token = super().get_token(user)
@@ -708,6 +711,9 @@ class ContaTokenSerializer(TokenObtainPairSerializer):
     O cliente envia ``email``+``password``. Como o ``User.username`` é o próprio
     e-mail, mapeamos ``email`` → ``username`` para o ``authenticate`` padrão.
     """
+
+    # Mensagem genérica (não revela QUAL campo errou — anti-enumeração), em PT-BR.
+    default_error_messages = {"no_active_account": "E-mail ou senha inválidos."}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

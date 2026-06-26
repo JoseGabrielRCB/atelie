@@ -332,6 +332,11 @@ pré-renderizadas, ex. `/peca/:id` e `/admin/*`, sobem por CSR). Preencher `SITE
 
 ## Histórico de mudanças
 
+- **2026-06-25** — **Logout revoga o refresh + nota de tokens**. `sair()` do `AuthContext` e do
+  `ContaContext` agora chama `logoutAdmin`/`logoutCliente` (`lib/api.js`): faz `POST /api/auth/logout/`
+  com o refresh (revoga via blacklist no servidor, `keepalive`) **e** limpa o storage. Os tokens
+  seguem em `localStorage` (chaves separadas admin/cliente) — **risco de XSS** anotado; mitigado por
+  CSP/headers e sanitização do React; migração para cookie `httpOnly` fica como melhoria futura.
 - **2026-06-25** — **Código de rastreio dos Correios** no front. **Admin › Vendas**: o modal de
   detalhe ganhou um `RastreioEditor` — campo `codigo_rastreio` editável **só em pedido pago** (salva
   via `atualizarRastreio` → `PATCH /pedidos/{id}/rastreio/`, com feedback e invalidação das queries

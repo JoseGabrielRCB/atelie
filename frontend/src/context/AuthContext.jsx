@@ -5,7 +5,7 @@ import {
   useEffect,
   useState,
 } from "react";
-import { tokens, login as apiLogin, obterMe } from "../lib/api";
+import { tokens, login as apiLogin, obterMe, logoutAdmin } from "../lib/api";
 
 const AuthContext = createContext(null);
 
@@ -67,7 +67,7 @@ export function AuthProvider({ children }) {
   );
 
   const sair = useCallback(() => {
-    tokens.limpar();
+    logoutAdmin(); // revoga o refresh no servidor (blacklist) + limpa o storage
     setMe(null);
     setAutenticado(false);
   }, []);

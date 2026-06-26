@@ -75,6 +75,7 @@ INSTALLED_APPS = [
     # Terceiros
     "rest_framework",
     "rest_framework_simplejwt",
+    "rest_framework_simplejwt.token_blacklist",  # revoga refresh no logout
     "corsheaders",
     "django_filters",
     # Local
@@ -93,6 +94,8 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # Cache-Control: privado=no-store (conta/admin/tokens), público=cache curto.
+    "catalogo.middleware.CacheControlMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -175,20 +178,44 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
     "EXCEPTION_HANDLER": "catalogo.exceptions.tratador_de_excecoes",
-    # Throttling: aplicado pontualmente (ex.: criação pública de encomendas).
+    # Throttling GLOBAL (anti-abuso) + escopos específicos. Anônimo por IP; logado
+    # por usuário (mais alto). Webhooks são isentos (throttle_classes=[] na view).
+    "DEFAULT_THROTTLE_CLASSES": (
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+    ),
     "DEFAULT_THROTTLE_RATES": {
-        "encomendas": "10/hour",
+        "anon": "120/min",       # navegação pública (vitrine etc.) por IP
+        "user": "240/min",       # autenticado (admin/cliente) por usuário
+        "login": "10/min",       # autenticação por IP (anti brute-force)
+        "encomendas": "10/hour",  # endpoints públicos sensíveis (cadastro/encomenda/cupom/checkout)
     },
 }
+
+# IP real atrás de proxy/load balancer. Por padrão (None) o DRF usa REMOTE_ADDR
+# (seguro). Em produção atrás de N proxies confiáveis, defina NUM_PROXIES=N para o
+# throttle ler o X-Forwarded-For na posição certa — sem confiar cegamente no header.
+_num_proxies = env("NUM_PROXIES", default="")
+if str(_num_proxies) != "":
+    REST_FRAMEWORK["NUM_PROXIES"] = int(_num_proxies)
 
 # --------------------------------------------------------------------------
 # JWT (djangorestframework-simplejwt)
 # --------------------------------------------------------------------------
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    # Access curto (renovado pelo refresh; o front renova sozinho em 401).
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=env.int("JWT_ACCESS_MIN", default=30)),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=env.int("JWT_REFRESH_DAYS", default=7)),
     "AUTH_HEADER_TYPES": ("Bearer",),
+    # O logout REVOGA o refresh de fato (blacklist via app token_blacklist).
+    # Rotação desligada por padrão: evita corrida de refresh concorrente no SPA
+    # (vários 401 simultâneos invalidariam o refresh um do outro). Quando ligada,
+    # BLACKLIST_AFTER_ROTATION garante que o refresh antigo seja revogado.
+    "ROTATE_REFRESH_TOKENS": env.bool("JWT_ROTATE_REFRESH", default=False),
+    "BLACKLIST_AFTER_ROTATION": True,
 }
+# Sem dados sensíveis nas claims do JWT: só `papel`/`acesso_financeiro` (admin) e
+# `audiencia="cliente"` — nunca CPF, senha ou segredos.
 
 # --------------------------------------------------------------------------
 # CORS — apenas a(s) origem(ns) do frontend (lista explícita; nunca "allow all").

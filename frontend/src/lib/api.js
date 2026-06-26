@@ -284,6 +284,24 @@ export async function login(username, password) {
   return dados;
 }
 
+// Logout: revoga o refresh no servidor (blacklist) e limpa o storage local.
+// Best-effort — a UI não pode travar se a rede falhar; `keepalive` permite o
+// envio mesmo durante o unload da página. O storage é limpo de imediato.
+function revogarELimpar(cofre) {
+  const refresh = cofre.refresh;
+  cofre.limpar();
+  if (refresh) {
+    fetch(`${BASE}/api/auth/logout/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh }),
+      keepalive: true,
+    }).catch(() => {});
+  }
+}
+export const logoutAdmin = () => revogarELimpar(tokens);
+export const logoutCliente = () => revogarELimpar(tokensCliente);
+
 // ----------------------------------------------------------------------------
 // Catálogo — escrita (admin)
 // ----------------------------------------------------------------------------

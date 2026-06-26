@@ -17,6 +17,7 @@ from .views import (
     EncomendaViewSet,
     ImagemViewSet,
     LoginView,
+    LogoutView,
     MeView,
     MudarSenhaView,
     PecaViewSet,
@@ -50,6 +51,7 @@ router.register("conta/pedidos", ContaPedidosView, basename="conta-pedido")
 urlpatterns = [
     path("auth/login/", LoginView.as_view(), name="login"),
     path("auth/refresh/", TokenRefreshView.as_view(), name="refresh"),
+    path("auth/logout/", LogoutView.as_view(), name="logout"),
     # Identidade do usuário logado + troca da própria senha.
     path("me/", MeView.as_view(), name="me"),
     path("me/senha/", MudarSenhaView.as_view(), name="me-senha"),

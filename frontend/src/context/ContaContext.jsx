@@ -11,6 +11,7 @@ import {
   contaLogin,
   contaCadastro,
   contaMe,
+  logoutCliente,
 } from "../lib/api";
 import { Carregando } from "../components/Estado";
 
@@ -70,7 +71,7 @@ export function ContaProvider({ children }) {
   const cadastrar = useCallback((dados) => contaCadastro(dados), []);
 
   const sair = useCallback(() => {
-    tokensCliente.limpar();
+    logoutCliente(); // revoga o refresh no servidor (blacklist) + limpa o storage
     setCliente(null);
     setLogado(false);
   }, []);

@@ -22,6 +22,8 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
+from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from . import evolution, pagamentos, promocoes, relatorios
@@ -447,6 +449,9 @@ class WebhookMercadoPagoView(APIView):
 
     permission_classes = [AllowAny]
     authentication_classes = []
+    # Webhook do provedor: nunca estrangular (o MP reenvia; a idempotência por
+    # EventoPagamento já protege contra repetição). Isento do throttle global.
+    throttle_classes = []
 
     def post(self, request, *args, **kwargs):
         # O MP manda o id do recurso em query (?data.id=) e/ou no corpo.
@@ -645,6 +650,9 @@ class WhatsappWebhookView(APIView):
 
     permission_classes = [AllowAny]
     authentication_classes = []
+    # Webhook de entrada do bot: nunca estrangular (a Evolution reenvia; a
+    # idempotência por MensagemWhatsApp protege). Isento do throttle global.
+    throttle_classes = []
 
     def post(self, request, *args, **kwargs):
         try:
@@ -803,9 +811,39 @@ class WhatsappDesconectarView(APIView):
 
 
 class LoginView(TokenObtainPairView):
-    """Login JWT que inclui o papel/acesso_financeiro nas claims do token."""
+    """Login JWT que inclui o papel/acesso_financeiro nas claims do token.
+
+    Throttle por IP (escopo ``login``, ~10/min) contra brute-force.
+    """
 
     serializer_class = TokenComPapelSerializer
+    throttle_scope = "login"
+    throttle_classes = [ScopedRateThrottle]
+
+
+class LogoutView(APIView):
+    """Revoga (blacklist) o refresh no logout — vale p/ admin e cliente.
+
+    Aceita o refresh no corpo sem exigir um access válido (o ponto é encerrar a
+    sessão mesmo com o access expirado). Idempotente: refresh já inválido/expirado
+    também responde sucesso. Sem PII no log.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request, *args, **kwargs):
+        token = request.data.get("refresh")
+        if not token:
+            return Response(
+                {"detalhe": "Informe o token de atualização para sair."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            RefreshToken(token).blacklist()
+        except TokenError:
+            pass  # já inválido/expirado — logout é idempotente
+        return Response(status=status.HTTP_205_RESET_CONTENT)
 
 
 def _gerar_senha_provisoria() -> str:
@@ -975,9 +1013,14 @@ class ContaCadastroView(APIView):
 
 
 class ContaLoginView(TokenObtainPairView):
-    """Login do cliente (e-mail + senha) → JWT. Recusa contas de staff."""
+    """Login do cliente (e-mail + senha) → JWT. Recusa contas de staff.
+
+    Throttle por IP (escopo ``login``, ~10/min) contra brute-force.
+    """
 
     serializer_class = ContaTokenSerializer
+    throttle_scope = "login"
+    throttle_classes = [ScopedRateThrottle]
 
 
 class ContaMeView(APIView):
