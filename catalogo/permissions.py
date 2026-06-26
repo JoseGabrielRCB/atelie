@@ -47,13 +47,33 @@ def pode_financeiro(user) -> bool:
     return bool(perfil and perfil.pode_financeiro)
 
 
+# Mensagem única quando o staff ainda não trocou a senha provisória.
+MSG_SENHA_PROVISORIA = "Troque sua senha provisória para continuar."
+
+
+def senha_provisoria_pendente(user) -> bool:
+    """True se o staff precisa trocar a senha provisória antes de usar o painel.
+
+    Bloqueia os endpoints do painel até a troca (reforça no backend o que o front
+    já faz). Os endpoints de troca/identidade (``/me/``, ``/me/senha/``, refresh)
+    usam ``IsAuthenticated`` e NÃO passam por estas permissões — seguem liberados.
+    """
+    perfil = perfil_efetivo(user)
+    return bool(perfil and perfil.senha_provisoria)
+
+
 class EhEquipeAtiva(BasePermission):
     """Permite a qualquer membro ativo da equipe (Dono ou Funcionário)."""
 
     message = "Você não tem acesso a esta área do painel."
 
     def has_permission(self, request, view):
-        return perfil_efetivo(request.user) is not None
+        if perfil_efetivo(request.user) is None:
+            return False
+        if senha_provisoria_pendente(request.user):
+            self.message = MSG_SENHA_PROVISORIA
+            return False
+        return True
 
 
 class LeituraPublicaEscritaEquipe(BasePermission):
@@ -69,7 +89,12 @@ class LeituraPublicaEscritaEquipe(BasePermission):
     def has_permission(self, request, view):
         if request.method in SAFE_METHODS:
             return True
-        return perfil_efetivo(request.user) is not None
+        if perfil_efetivo(request.user) is None:
+            return False
+        if senha_provisoria_pendente(request.user):
+            self.message = MSG_SENHA_PROVISORIA
+            return False
+        return True
 
 
 class PodeFinanceiro(BasePermission):
@@ -78,7 +103,12 @@ class PodeFinanceiro(BasePermission):
     message = "Você não tem acesso ao financeiro (Vendas)."
 
     def has_permission(self, request, view):
-        return pode_financeiro(request.user)
+        if not pode_financeiro(request.user):
+            return False
+        if senha_provisoria_pendente(request.user):
+            self.message = MSG_SENHA_PROVISORIA
+            return False
+        return True
 
 
 class SoDono(BasePermission):
@@ -87,7 +117,12 @@ class SoDono(BasePermission):
     message = "Apenas o dono tem acesso a esta área."
 
     def has_permission(self, request, view):
-        return eh_dono(request.user)
+        if not eh_dono(request.user):
+            return False
+        if senha_provisoria_pendente(request.user):
+            self.message = MSG_SENHA_PROVISORIA
+            return False
+        return True
 
 
 def eh_cliente(user) -> bool:

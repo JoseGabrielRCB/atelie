@@ -29,6 +29,9 @@ Toda a interface visível ao usuário é em **PT-BR**. Não há cadastro/login d
 - psycopg2-binary 2.9 + PostgreSQL 16 (via docker-compose)
 - requests 2.32 (chamadas HTTP ao bot de WhatsApp — Evolution API)
 - reportlab 4.2 (geração de PDF dos relatórios — puro Python, sem libs do sistema)
+- django-cleanup 9.0 (apaga o arquivo físico de um `ImageField` ao excluir/trocar; **app por último**
+  em `INSTALLED_APPS`). Apaga no **commit** da transação — testes que checam o arquivo usam
+  `@pytest.mark.django_db(transaction=True)`.
 - pytest 9 + pytest-django 4.12 (testes)
 
 ## Estrutura de pastas
@@ -87,24 +90,33 @@ min `0` e máx `1000000.00`), `categoria`
 (choices sugeridos P/M/G/GG/Único, mas **aceita texto livre** — inclusive numéricos como
 `12`/`38`; o `VariacaoSerializer` declara `tamanho` como `CharField` para não virar
 `ChoiceField`), `cor` (texto livre, `max_length=50`), `cor_hex` (`max_length=7`, `blank=True` —
-hex opcional da cor quando vem da paleta salva), `estoque` (`PositiveIntegerField`, default 0).
+hex opcional da cor quando vem da paleta salva; é um **SNAPSHOT**: gravado no momento da escolha,
+NÃO acompanha mudanças posteriores na `Cor` da paleta — variações antigas mantêm o hex de quando
+foram criadas), `estoque` (`PositiveIntegerField`, default 0).
 `unique_together = (peca, tamanho, cor)` (continua só sobre `cor`, NÃO virou FK). Duplicar a
 combinação retorna `400` com mensagem PT-BR amigável (`UniqueTogetherValidator` explícito no
 `VariacaoSerializer`: "Já existe uma variação com esse tamanho e cor para esta peça.").
 Propriedade `esgotado` → `estoque == 0`.
 
 **Imagem** — `peca` (FK→Peca, `CASCADE`, related_name `imagens`), `arquivo` (ImageField,
-`upload_to="pecas/"`), `principal` (bool, default False).
+`upload_to="pecas/"`), `principal` (bool, default False). **Uma só principal por peça é forçada no
+servidor** (`ImagemViewSet`): marcar uma imagem como `principal` desmarca as outras (em transação);
+se a peça tiver imagens e nenhuma principal (1ª imagem, ou a principal foi removida/desmarcada), a
+primeira é promovida automaticamente. O arquivo físico é apagado ao excluir/trocar (django-cleanup).
 
 **Encomenda** — pedido **sob medida** enviado pelo cliente (público). `nome` (obrigatório,
 `max_length=80`), `contato` (obrigatório — telefone/WhatsApp, `max_length=100`), `descricao`
 (TextField, obrigatório, `max_length=600`),
 `tamanho_medidas` (texto, opcional), `prazo_desejado` (DateField, opcional), `status`
 (choices: `recebido` (default) | `em_andamento` | `concluida` | `cancelada`), `criado_em`
-(auto_now_add). ordering `-criado_em`.
+(auto_now_add). ordering `-criado_em`. **Máquina de estados** (validada no `EncomendaSerializer`):
+`recebido` → `em_andamento`/`cancelada`; `em_andamento` → `concluida`/`cancelada`; `concluida` e
+`cancelada` são **terminais**. Transição inválida → `400` com mensagem PT-BR amigável (ex.: "Não dá
+para mudar de “Recebido” para “Concluída”."); manter o mesmo status é no-op (200).
 
 **EncomendaImagem** — `encomenda` (FK→Encomenda, `CASCADE`, related_name `imagens`), `arquivo`
-(ImageField, `upload_to="encomendas/"`). São as imagens de referência anexadas pelo cliente.
+(ImageField, `upload_to="encomendas/"`). São as imagens de referência anexadas pelo cliente. O
+arquivo físico é apagado ao excluir a encomenda/imagem (django-cleanup).
 
 **Pedido** — compra online de **peças prontas** paga via Mercado Pago (Checkout Pro). `nome`
 (`max_length=80`), `contato` (`max_length=100`), `status` (choices: `aguardando_pagamento`
@@ -180,6 +192,13 @@ ativo**, p/ não travar o acesso), `eh_dono(user)` e `pode_financeiro(user)`. Cl
   (`/whatsapp/status|conectar|desconectar|dono`).
 - **`EhCliente`** — conta de CLIENTE (tem `Cliente`, sem `Perfil`, `is_staff=False`). Aplicada em
   `/api/conta/me|senha|pedidos/` e no **checkout**. Staff é recusado (e cliente é recusado no painel).
+
+**Senha provisória reforçada no backend:** enquanto `perfil.senha_provisoria == True`, as quatro
+permissões de staff acima (`LeituraPublicaEscritaEquipe` na escrita, `EhEquipeAtiva`,
+`PodeFinanceiro`, `SoDono`) **negam com `403`** e a mensagem "Troque sua senha provisória para
+continuar." (helper `senha_provisoria_pendente`). Continuam liberados os endpoints de identidade/
+troca: `GET /api/me/`, `POST /api/me/senha/` (limpa a flag) e `auth/refresh/` (usam `IsAuthenticated`,
+fora dessas classes). Assim a troca obrigatória no 1º acesso é garantida no servidor, não só no front.
 
 Funcionário **inativo** (`ativo=False`) é bloqueado: a desativação sincroniza `User.is_active=False`
 (o `JWTAuthentication` recusa o token) **e** `perfil_efetivo` devolve `None` (permissões negam). O
@@ -425,7 +444,35 @@ python -m pytest                                      # testes
 ### Variáveis de ambiente (`.env`)
 
 `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`,
-`DB_PORT`, `CORS_ALLOWED_ORIGINS`. **Pagamento (Mercado Pago)**: `MP_ACCESS_TOKEN` (token do
+`DB_PORT`, `CORS_ALLOWED_ORIGINS`.
+
+**Produção / segurança (endurecimento, env-gated).** O `config/settings.py` é seguro por padrão
+quando `DEBUG=False`; em dev (`DEBUG=True`) nada disso quebra o `http://localhost`:
+- **`SECRET_KEY`** vem SÓ do ambiente — em produção é **obrigatória e forte** (`>= 50` chars); o boot
+  **falha** (`ImproperlyConfigured`) se faltar/for fraca (sem default inseguro). Em dev usa um default
+  só-de-desenvolvimento se vier vazia.
+- **`DEBUG`** nunca `True` em produção. **`ALLOWED_HOSTS`** e **`CORS_ALLOWED_ORIGINS`** restritos aos
+  domínios reais — o boot recusa `ALLOWED_HOSTS` vazio ou com `*`, e `CORS` vazio, quando `DEBUG=False`
+  (nunca "allow all").
+- **HTTPS/transporte** (default ligado em prod, ajustável por env): `SECURE_SSL_REDIRECT`,
+  `SECURE_HSTS_SECONDS` (1 ano) + `SECURE_HSTS_INCLUDE_SUBDOMAINS` + `SECURE_HSTS_PRELOAD`,
+  `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE`. Atrás de proxy/LB que termina TLS, ligue
+  `USE_X_FORWARDED_PROTO=True` (define `SECURE_PROXY_SSL_HEADER`).
+- **Headers** (também em dev): `SECURE_CONTENT_TYPE_NOSNIFF=True`, `X_FRAME_OPTIONS="DENY"`,
+  `SECURE_REFERRER_POLICY="same-origin"`. **CSP** opcional (`CSP_ENABLED`/`CSP_POLICY`, **desligada por
+  padrão** — middleware `catalogo.middleware.ContentSecurityPolicyMiddleware`; a CSP "real" da SPA do
+  cliente fica no host estático/CDN, pois ela é servida fora do Django).
+- Verificação: `python manage.py check --deploy` **limpo** com as flags de produção (rodar com
+  `DEBUG=False` + `SECRET_KEY` forte + `ALLOWED_HOSTS`/`CORS` reais). A suíte de testes roda com
+  `DEBUG=True` (flags seguras desligadas), então `http://testserver` não é redirecionado.
+
+> **Sobre "ver o login no DevTools":** é **normal** e esperado ver o seu próprio e-mail/senha saindo
+> na requisição de login no seu navegador — é a sua própria sessão. A proteção em trânsito é o
+> **HTTPS** (TLS criptografa tudo entre o navegador e o servidor); não se criptografa o JSON "à mão".
+> No servidor a senha é guardada com **hash** (PBKDF2 do Django), nunca em texto puro. Em produção o
+> `SECURE_SSL_REDIRECT`/HSTS garantem que o tráfego seja sempre por HTTPS.
+
+**Pagamento (Mercado Pago)**: `MP_ACCESS_TOKEN` (token do
 servidor), `MP_WEBHOOK_SECRET` (assinatura do webhook), `MP_PUBLIC_URL` (base HTTPS pública do
 backend p/ `notification_url`; em dev use um túnel tipo ngrok), `FRONTEND_URL` (base do frontend
 p/ as `back_urls`). Defaults dev-safe (token/segredo vazios; URLs `localhost`). Opcionais para o
@@ -531,6 +578,25 @@ Django por `http://backend:8000`.
 
 ## Histórico de mudanças
 
+- **2026-06-25** — **Endurecimento de produção** (item #4 da auditoria; env-gated, dev intacto).
+  `SECRET_KEY` só do ambiente e **obrigatória/forte em produção** (boot falha sem ela; sem default
+  inseguro); `ALLOWED_HOSTS`/`CORS_ALLOWED_ORIGINS` recusam vazio/`*` com `DEBUG=False`. HTTPS/HSTS
+  (`SECURE_SSL_REDIRECT`, `SECURE_HSTS_*`), cookies seguros (`SESSION/CSRF_COOKIE_SECURE`),
+  `SECURE_PROXY_SSL_HEADER` (via `USE_X_FORWARDED_PROTO`), e headers `nosniff`/`X_FRAME_OPTIONS=DENY`/
+  `Referrer-Policy` — ligados por padrão em produção, ajustáveis por env. CSP básica opcional
+  (`catalogo/middleware.py`, env-gated, off por padrão). `python manage.py check --deploy` **limpo**
+  em modo produção; dev (`http://localhost`) e a suíte (**223 testes**) intactos. `.env.example`
+  atualizado + nota no CLAUDE.md sobre HTTPS/login/hash de senha. Sem migration.
+- **2026-06-25** — **Correções pós-auditoria** (itens 1/3/5/6 das decisões do dono). **#1** uma só
+  imagem `principal` por peça, forçada no `ImagemViewSet` (marca uma → desmarca as outras; promove a
+  1ª se nenhuma for principal). **#3** **django-cleanup** (`requirements` + `INSTALLED_APPS` por
+  último) apaga o arquivo físico ao excluir/trocar `ImageField` (cobre cascata peça/encomenda). **#5**
+  senha provisória **bloqueia o painel no backend** (`403` nas permissões de staff; libera só
+  `/me/`, `/me/senha/`, refresh). **#6** **máquina de estados** da Encomenda no serializer
+  (`recebido`→`em_andamento`/`cancelada`; `em_andamento`→`concluida`/`cancelada`; terminais
+  `concluida`/`cancelada`) → `400` PT-BR em transição inválida. **#2** documentado: `cor_hex` é
+  **snapshot** (sem mudança de código). Novo `test_correcoes_integridade.py` (13). Suíte: **223
+  testes**. (Item #4 — hardening de produção — fica para o prompt do deploy.)
 - **2026-06-25** — **Auditoria de integridade** (catálogo/promoções/CRUD/fidelidade + RBAC/IDOR).
   Único bug claro corrigido: a duplicata de variação (`unique_together`) retornava a mensagem técnica
   padrão do DRF ("...devem criar um set único") — agora um `UniqueTogetherValidator` explícito devolve

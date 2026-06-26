@@ -149,6 +149,44 @@ class ImagemViewSet(viewsets.ModelViewSet):
     permission_classes = [LeituraPublicaEscritaEquipe]
     filterset_fields = ["peca", "principal"]
 
+    def perform_create(self, serializer):
+        imagem = serializer.save()
+        self._normalizar_principal(imagem.peca, preferida=imagem)
+
+    def perform_update(self, serializer):
+        imagem = serializer.save()
+        self._normalizar_principal(imagem.peca, preferida=imagem)
+
+    def perform_destroy(self, instance):
+        peca = instance.peca
+        instance.delete()
+        self._normalizar_principal(peca)
+
+    @staticmethod
+    def _normalizar_principal(peca, preferida=None):
+        """Garante UMA imagem principal por peça (regra forçada no servidor).
+
+        - Se ``preferida`` foi marcada como principal, desmarca as outras.
+        - Caso contrário, garante exatamente uma principal: se nenhuma estiver
+          marcada (ex.: 1ª imagem, ou a principal foi removida/desmarcada),
+          promove a primeira; se houver mais de uma, mantém só a primeira.
+        """
+        with transaction.atomic():
+            qs = Imagem.objects.filter(peca=peca)
+            if preferida is not None and preferida.principal:
+                qs.exclude(pk=preferida.pk).update(principal=False)
+                return
+            imagens = list(qs.order_by("-principal", "id"))
+            if not imagens:
+                return
+            principais = [i for i in imagens if i.principal]
+            if not principais:
+                primeira = imagens[0]
+                primeira.principal = True
+                primeira.save(update_fields=["principal"])
+            elif len(principais) > 1:
+                qs.exclude(pk=principais[0].pk).update(principal=False)
+
 
 class EncomendaViewSet(viewsets.ModelViewSet):
     """Encomendas (pedidos sob medida).

@@ -9,6 +9,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import environ
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -30,9 +31,36 @@ env_file = BASE_DIR / ".env"
 if env_file.exists():
     environ.Env.read_env(env_file)
 
-SECRET_KEY = env("SECRET_KEY", default="insecure-dev-key-troque-em-producao")
 DEBUG = env("DEBUG")
+
+# SECRET_KEY: SEMPRE do ambiente. Em produção (DEBUG=False) é OBRIGATÓRIA e forte
+# — sem default inseguro: o boot FALHA se faltar/for fraca. Em dev usa um default
+# só por conveniência (nunca vai para produção).
+_DEV_SECRET = "dev-only-insecure-key-troque-em-producao-0123456789abcdef"
+_SECRETS_INSEGUROS = {
+    "",
+    "insecure-dev-key-troque-em-producao",
+    "troque-esta-chave-em-producao",
+    _DEV_SECRET,
+}
+SECRET_KEY = env("SECRET_KEY", default="")
+if SECRET_KEY in _SECRETS_INSEGUROS or len(SECRET_KEY) < 50:
+    if DEBUG:
+        SECRET_KEY = _DEV_SECRET  # só para desenvolvimento local
+    else:
+        raise ImproperlyConfigured(
+            "SECRET_KEY ausente ou fraca em produção. Defina uma chave forte na "
+            "variável de ambiente SECRET_KEY (>= 50 caracteres). Gere com: "
+            'python -c "from django.core.management.utils import '
+            'get_random_secret_key; print(get_random_secret_key())"'
+        )
+
+# ALLOWED_HOSTS restritos ao(s) domínio(s) real(is) em produção (nunca "*").
 ALLOWED_HOSTS = env("ALLOWED_HOSTS")
+if not DEBUG and (not ALLOWED_HOSTS or "*" in ALLOWED_HOSTS):
+    raise ImproperlyConfigured(
+        "ALLOWED_HOSTS deve listar os domínios reais em produção (sem '*')."
+    )
 
 # --------------------------------------------------------------------------
 # Apps
@@ -51,6 +79,9 @@ INSTALLED_APPS = [
     "django_filters",
     # Local
     "catalogo",
+    # Apaga arquivos físicos órfãos ao excluir/trocar ImageField. DEVE ser o
+    # último app (conecta os signals depois de todos os models carregados).
+    "django_cleanup.apps.CleanupConfig",
 ]
 
 MIDDLEWARE = [
@@ -160,9 +191,59 @@ SIMPLE_JWT = {
 }
 
 # --------------------------------------------------------------------------
-# CORS — apenas a(s) origem(ns) do frontend
+# CORS — apenas a(s) origem(ns) do frontend (lista explícita; nunca "allow all").
 # --------------------------------------------------------------------------
 CORS_ALLOWED_ORIGINS = env("CORS_ALLOWED_ORIGINS")
+# Não usamos CORS_ALLOW_ALL_ORIGINS — a lista acima é a fonte da verdade.
+if not DEBUG and not CORS_ALLOWED_ORIGINS:
+    raise ImproperlyConfigured(
+        "CORS_ALLOWED_ORIGINS deve listar a(s) origem(ns) do frontend em produção."
+    )
+
+# --------------------------------------------------------------------------
+# Segurança de transporte e headers (endurecido para produção).
+# Em DEBUG (dev) os redirects/cookies seguros ficam DESLIGADOS para o
+# http://localhost funcionar; em produção (DEBUG=False) ligam por padrão e podem
+# ser ajustados por env. `python manage.py check --deploy` fica limpo em produção.
+# --------------------------------------------------------------------------
+_PROD = not DEBUG
+
+# Redireciona HTTP→HTTPS e HSTS (cabeçalho que obriga HTTPS por um período).
+SECURE_SSL_REDIRECT = env.bool("SECURE_SSL_REDIRECT", default=_PROD)
+SECURE_HSTS_SECONDS = env.int("SECURE_HSTS_SECONDS", default=31536000 if _PROD else 0)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env.bool("SECURE_HSTS_INCLUDE_SUBDOMAINS", default=_PROD)
+SECURE_HSTS_PRELOAD = env.bool("SECURE_HSTS_PRELOAD", default=_PROD)
+
+# Cookies (sessão do Django admin e CSRF) só por HTTPS em produção.
+SESSION_COOKIE_SECURE = env.bool("SESSION_COOKIE_SECURE", default=_PROD)
+CSRF_COOKIE_SECURE = env.bool("CSRF_COOKIE_SECURE", default=_PROD)
+
+# Atrás de proxy/load balancer que TERMINA o TLS (Nginx, ALB, Cloud Run): confia
+# no header que diz se a requisição original era HTTPS. Ligue via env nesse caso.
+if env.bool("USE_X_FORWARDED_PROTO", default=False):
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# Headers de segurança (seguros também em dev).
+SECURE_CONTENT_TYPE_NOSNIFF = True          # impede MIME-sniffing
+SECURE_REFERRER_POLICY = "same-origin"      # não vaza a URL para terceiros
+X_FRAME_OPTIONS = "DENY"                     # anti-clickjacking (nega iframes)
+
+# Content-Security-Policy básica (OPCIONAL, env-gated). A SPA do cliente é servida
+# FORA do Django (Vite/host estático), então a CSP "real" dela vive nesse host/CDN;
+# aqui é uma camada extra para o que o Django serve (admin, mídia, browsable API).
+# Desligada por padrão para não quebrar o Django admin sem teste — ligue com
+# CSP_ENABLED=True após validar.
+CSP_ENABLED = env.bool("CSP_ENABLED", default=False)
+CSP_POLICY = env(
+    "CSP_POLICY",
+    default=(
+        "default-src 'self'; img-src 'self' data:; "
+        "style-src 'self' 'unsafe-inline'; script-src 'self'; "
+        "object-src 'none'; frame-ancestors 'none'; base-uri 'self'"
+    ),
+)
+if CSP_ENABLED:
+    MIDDLEWARE = MIDDLEWARE + ["catalogo.middleware.ContentSecurityPolicyMiddleware"]
 
 # --------------------------------------------------------------------------
 # Pagamento online — Mercado Pago (Checkout Pro)

@@ -242,6 +242,16 @@ class EncomendaImagemSerializer(serializers.ModelSerializer):
         fields = ["id", "arquivo"]
 
 
+# Máquina de estados do status da encomenda: transições válidas (admin).
+# `concluida` e `cancelada` são terminais (não saem desses estados).
+TRANSICOES_ENCOMENDA = {
+    Encomenda.Status.RECEBIDO: {Encomenda.Status.EM_ANDAMENTO, Encomenda.Status.CANCELADA},
+    Encomenda.Status.EM_ANDAMENTO: {Encomenda.Status.CONCLUIDA, Encomenda.Status.CANCELADA},
+    Encomenda.Status.CONCLUIDA: set(),
+    Encomenda.Status.CANCELADA: set(),
+}
+
+
 class EncomendaSerializer(serializers.ModelSerializer):
     """Leitura de encomendas (admin): inclui imagens aninhadas."""
 
@@ -262,6 +272,23 @@ class EncomendaSerializer(serializers.ModelSerializer):
         ]
         # status é editável pelo admin (PATCH); criado_em nunca muda.
         read_only_fields = ["criado_em"]
+
+    def validate_status(self, novo):
+        """Recusa transições inválidas (mensagem PT-BR amigável)."""
+        if self.instance is None or novo == self.instance.status:
+            return novo  # criação ou status inalterado
+        atual = self.instance.status
+        permitidos = TRANSICOES_ENCOMENDA.get(atual, set())
+        if novo not in permitidos:
+            rotulos = dict(Encomenda.Status.choices)
+            if not permitidos:
+                raise serializers.ValidationError(
+                    f"Esta encomenda está {rotulos[atual].lower()} e não pode mudar de status."
+                )
+            raise serializers.ValidationError(
+                f"Não dá para mudar de “{rotulos[atual]}” para “{rotulos[novo]}”."
+            )
+        return novo
 
 
 class EncomendaCreateSerializer(serializers.ModelSerializer):
