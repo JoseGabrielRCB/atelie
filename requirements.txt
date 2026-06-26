@@ -9,6 +9,7 @@ psycopg2-binary==2.9.12
 mercadopago==3.2.0
 requests==2.34.2  # >=2.33 exigido pelo mercadopago
 reportlab==4.2.5  # geração de PDF dos relatórios (puro Python, sem libs do sistema)
+matplotlib>=3.10,<4  # gráfico de barras embutido no PDF financeiro (PNG em memória; import tardio)
 django-cleanup==9.0.0  # apaga arquivos físicos órfãos ao excluir/trocar ImageField
 pytest==9.1.1
 pytest-django==4.12.0

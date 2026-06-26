@@ -525,6 +525,8 @@ export const excluirPromocao = (id) =>
 // ----------------------------------------------------------------------------
 // Relatórios financeiros (admin) — agregações no servidor + exportação.
 // ----------------------------------------------------------------------------
+export const relatorioFinanceiro = (params = {}) =>
+  request(`/relatorios/financeiro/${querystring(params)}`, { auth: true });
 export const relatorioVendasPeriodo = (params = {}) =>
   request(`/relatorios/vendas-por-periodo/${querystring(params)}`, { auth: true });
 export const relatorioProdutosVendidos = (params = {}) =>

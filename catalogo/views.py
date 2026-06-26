@@ -1109,6 +1109,9 @@ class _RelatorioView(APIView):
         formato = (request.query_params.get("formato") or "").lower()
         if formato in ("csv", "pdf"):
             try:
+                # PDF com layout próprio (ex.: financeiro) tem prioridade.
+                if formato == "pdf" and hasattr(self, "montar_pdf"):
+                    return self.montar_pdf(dados)
                 return relatorios.exportar(
                     formato,
                     exportacao["nome"],
@@ -1124,6 +1127,59 @@ class _RelatorioView(APIView):
                     status=status.HTTP_503_SERVICE_UNAVAILABLE,
                 )
         return Response(dados)
+
+
+class RelatorioFinanceiroView(_RelatorioView):
+    """Visão financeira consolidada (Fase 1): KPIs com comparativo + DRE parcial."""
+
+    def montar(self, request):
+        dados = relatorios.financeiro(
+            de=request.query_params.get("de"),
+            ate=request.query_params.get("ate"),
+            granularidade=request.query_params.get("granularidade", "dia"),
+        )
+        r = dados["resumo"]
+        cabecalhos = ["Indicador", "Valor"]
+        linhas = [
+            ["Faturamento (R$)", relatorios.moeda_br(r["faturamento"]["valor"])],
+            ["Nº de vendas", r["num_vendas"]["valor"]],
+            ["Ticket médio (R$)", relatorios.moeda_br(r["ticket_medio"]["valor"])],
+            ["Descontos concedidos (R$)", relatorios.moeda_br(r["descontos"]["valor"])],
+            ["Taxa de recompra (%)", r["taxa_recompra"]["valor"]],
+            ["", ""],
+            ["Demonstrativo (DRE)", ""],
+        ]
+        for item in dados["dre"]:
+            valor = (
+                relatorios.moeda_br(item["valor"]) if item["valor"] is not None else "—"
+            )
+            linhas.append([item["linha"], valor])
+        exportacao = {
+            "nome": f"financeiro-{dados['de']}-a-{dados['ate']}",
+            "titulo": "Relatório financeiro",
+            "subtitulo": (
+                f"De {relatorios.data_br(dados['de'])} a "
+                f"{relatorios.data_br(dados['ate'])} · comparado a "
+                f"{relatorios.data_br(dados['comparativo']['de'])} a "
+                f"{relatorios.data_br(dados['comparativo']['ate'])}"
+            ),
+            "cabecalhos": cabecalhos,
+            "linhas": linhas,
+        }
+        return dados, exportacao
+
+    def montar_pdf(self, dados):
+        """PDF rico (marca + KPIs + DRE + gráfico + detalhamento).
+
+        Reúne dados extras (série temporal, produtos, cupons) só para enriquecer o
+        PDF — o JSON da API e o CSV continuam idênticos."""
+        de, ate, gran = dados["de"], dados["ate"], dados["granularidade"]
+        return relatorios.gerar_pdf_financeiro(
+            dados,
+            series=relatorios.vendas_por_periodo(de=de, ate=ate, granularidade=gran),
+            produtos=relatorios.produtos_mais_vendidos(de=de, ate=ate, top=10),
+            cupons=relatorios.cupons_por_periodo(de=de, ate=ate),
+        )
 
 
 class RelatorioVendasPeriodoView(_RelatorioView):

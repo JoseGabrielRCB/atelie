@@ -86,6 +86,16 @@ vírgula decimal).
 - **Para o desenvolvedor:** o erro técnico e específico continua **nos logs do backend** (status,
   causa, stack) — só não aparece para o usuário final.
 
+### Pontuação — sem travessões nos textos
+- **Não usar travessões (`—` em dash nem `–` en dash) nos textos da interface** (títulos, rótulos,
+  cartões, frases de ajuda, mensagens, rótulos de tabela/DRE). Em vez disso, usar **parênteses**,
+  **dois-pontos**, **vírgula** ou **ponto** para reescrever a frase.
+  - ❌ "Pedidos em revisão — a estornar" / "Recompra — fração dos clientes…"
+  - ✅ "Pedidos em revisão (a estornar)" / "Recompra: fração dos clientes…"
+- **Exceções (não são travessões):** o **hífen/sinal de menos** comum `-` para subtração ou notação
+  contábil (`(-) Descontos`), e como **placeholder** discreto de célula vazia (ou um texto curto como
+  "sem código"). Linhas divisórias em **comentários de código** (`// ----`) podem ficar.
+
 ## Paleta de cores (revisada para mais contraste — 19/06/2026)
 
 | Token | Hex | Uso |

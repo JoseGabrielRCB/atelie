@@ -60,6 +60,7 @@ def funcionario_sem_fin(db):
 # Gate financeiro
 # --------------------------------------------------------------------------
 ROTAS = [
+    "relatorio-financeiro",
     "relatorio-vendas-periodo",
     "relatorio-produtos-vendidos",
     "relatorio-resumo-mes",
@@ -199,6 +200,153 @@ def test_resumo_do_mes_isola_outro_mes(api, admin_user, peca_ativa, cliente):
     resp = api.get(reverse("relatorio-resumo-mes"), {"mes": "2026-06"})
     assert resp.data["num_vendas"] == 0
     assert resp.data["faturamento"] == "0.00"
+
+
+# --------------------------------------------------------------------------
+# Financeiro (KPIs com comparativo + DRE parcial — Fase 1)
+# --------------------------------------------------------------------------
+def _outro_cliente(nome="Bia", cpf="11144477735"):
+    """2º cliente (CPF válido distinto) para os testes de recompra."""
+    from catalogo.models import Cliente
+
+    u = User.objects.create_user(
+        username=f"{nome.lower()}@cliente.com",
+        email=f"{nome.lower()}@cliente.com",
+        password="senha-cliente-123",
+        first_name=nome,
+    )
+    return Cliente.objects.create(usuario=u, nome=f"{nome} Cliente", cpf=cpf)
+
+
+def test_financeiro_comparativo(api, admin_user, peca_ativa, cliente):
+    # Período atual (junho): 2 vendas pagas = 399.80.
+    _pedido_pago(cliente, peca_ativa, quando=_quando(2026, 6, 10), qtd=1)  # 199.90
+    _pedido_pago(cliente, peca_ativa, quando=_quando(2026, 6, 11), qtd=1)  # 199.90
+    # Janela anterior (maio, mesma duração): 1 venda = 199.90.
+    _pedido_pago(cliente, peca_ativa, quando=_quando(2026, 5, 10), qtd=1)
+
+    api.force_authenticate(admin_user)
+    resp = api.get(
+        reverse("relatorio-financeiro"),
+        {"de": "2026-06-01", "ate": "2026-06-30"},
+    )
+    assert resp.status_code == 200
+    d = resp.data
+    # Janela anterior = 30 dias imediatamente antes (02/05 a 31/05).
+    assert d["comparativo"] == {"de": "2026-05-02", "ate": "2026-05-31"}
+    assert d["resumo"]["faturamento"]["valor"] == "399.80"
+    # (399.80 − 199.90) / 199.90 × 100 = 100.0%.
+    assert d["resumo"]["faturamento"]["variacao_pct"] == 100.0
+    assert d["resumo"]["num_vendas"]["valor"] == 2
+    assert d["resumo"]["num_vendas"]["variacao_pct"] == 100.0
+    # DRE: receita líquida sem desconto = faturamento.
+    receita_liq = next(l for l in d["dre"] if l["linha"].startswith("= Receita líquida"))
+    assert receita_liq["valor"] == "399.80"
+
+
+def test_financeiro_divisao_por_zero(api, admin_user, peca_ativa, cliente):
+    # Só há venda no período atual; janela anterior vazia → variação = None.
+    _pedido_pago(cliente, peca_ativa, quando=_quando(2026, 6, 10), qtd=1)
+    api.force_authenticate(admin_user)
+    resp = api.get(
+        reverse("relatorio-financeiro"),
+        {"de": "2026-06-01", "ate": "2026-06-30"},
+    )
+    assert resp.status_code == 200
+    assert resp.data["resumo"]["faturamento"]["variacao_pct"] is None
+
+
+def test_financeiro_taxa_recompra(api, admin_user, peca_ativa, cliente):
+    # `cliente` recompra (2 pedidos pagos); o 2º cliente compra 1× → 1 de 2 = 50%.
+    _pedido_pago(cliente, peca_ativa, quando=_quando(2026, 6, 10), qtd=1)
+    _pedido_pago(cliente, peca_ativa, quando=_quando(2026, 6, 12), qtd=1)
+    _pedido_pago(_outro_cliente(), peca_ativa, quando=_quando(2026, 6, 11), qtd=1)
+
+    api.force_authenticate(admin_user)
+    resp = api.get(reverse("relatorio-financeiro"))
+    assert resp.status_code == 200
+    rec = resp.data["resumo"]["taxa_recompra"]
+    assert rec["valor"] == "50.0"
+    assert rec["clientes"] == 2
+    assert rec["recorrentes"] == 1
+    # Métrica de carteira (lifetime): sem comparativo de período.
+    assert rec["variacao_pct"] is None
+
+
+def test_financeiro_em_revisao_informativo(api, admin_user, peca_ativa, cliente):
+    _pedido_pago(cliente, peca_ativa, quando=_quando(2026, 6, 10), qtd=1)  # pago: 199.90
+    _pedido_pago(
+        cliente, peca_ativa, quando=_quando(2026, 6, 11), qtd=1,
+        status=Pedido.Status.EM_REVISAO,
+    )  # em revisão: NÃO entra no faturamento
+
+    api.force_authenticate(admin_user)
+    resp = api.get(
+        reverse("relatorio-financeiro"),
+        {"de": "2026-06-01", "ate": "2026-06-30"},
+    )
+    d = resp.data
+    # Faturamento conta só o pago.
+    assert d["resumo"]["faturamento"]["valor"] == "199.90"
+    # Em revisão aparece como bloco/linha informativa (a estornar).
+    assert d["em_revisao"]["num"] == 1
+    assert d["em_revisao"]["total"] == "199.90"
+    linha = next(l for l in d["dre"] if l.get("informativo"))
+    assert linha["valor"] == "199.90"
+
+
+def test_financeiro_campos_futuros_nao_quebram(api, admin_user):
+    api.force_authenticate(admin_user)
+    resp = api.get(reverse("relatorio-financeiro"))
+    assert resp.status_code == 200
+    d = resp.data
+    # Fase 2 (margem): indisponível, sem valor.
+    assert d["resumo"]["lucro_bruto"]["disponivel"] is False
+    assert d["resumo"]["lucro_bruto"]["valor"] is None
+    cmv = next(l for l in d["dre"] if l["linha"].startswith("(-) CMV"))
+    assert cmv["disponivel"] is False and cmv["valor"] is None
+
+
+def test_financeiro_exporta_csv(api, admin_user, peca_ativa, cliente):
+    _pedido_pago(cliente, peca_ativa, quando=_quando(2026, 6, 10), qtd=1)
+    api.force_authenticate(admin_user)
+    resp = api.get(
+        reverse("relatorio-financeiro"),
+        {"de": "2026-06-01", "ate": "2026-06-30", "formato": "csv"},
+    )
+    assert resp.status_code == 200
+    assert resp["Content-Type"].startswith("text/csv")
+    assert ".csv" in resp["Content-Disposition"]
+
+
+def test_financeiro_exporta_pdf(api, admin_user, peca_ativa, cliente):
+    # Com vendas, em revisão e cupom: exercita KPIs, DRE, gráfico e detalhamento.
+    cupom = Promocao.objects.create(
+        nome="Cupom Junho",
+        tipo_aplicacao=Promocao.TipoAplicacao.CUPOM,
+        codigo="JUNHO",
+        tipo_desconto=Promocao.TipoDesconto.VALOR,
+        valor=Decimal("20.00"),
+        escopo=Promocao.Escopo.TUDO,
+    )
+    _pedido_pago(cliente, peca_ativa, quando=_quando(2026, 6, 10), qtd=2)
+    _pedido_pago(
+        cliente, peca_ativa, quando=_quando(2026, 6, 12), qtd=1,
+        desconto="20.00", cupom=cupom,
+    )
+    _pedido_pago(
+        cliente, peca_ativa, quando=_quando(2026, 6, 13), qtd=1,
+        status=Pedido.Status.EM_REVISAO,
+    )
+    api.force_authenticate(admin_user)
+    resp = api.get(
+        reverse("relatorio-financeiro"),
+        {"de": "2026-06-01", "ate": "2026-06-30", "formato": "pdf"},
+    )
+    assert resp.status_code == 200
+    assert resp["Content-Type"] == "application/pdf"
+    assert resp.content[:4] == b"%PDF"
+    assert ".pdf" in resp["Content-Disposition"]
 
 
 # --------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
-import { Minus, Plus } from "lucide-react";
+import { ArrowLeft, Minus, Plus } from "lucide-react";
 import { criarEncomenda } from "../lib/api";
 import { linkWhatsappEncomenda, whatsappConfigurado } from "../lib/whatsapp";
 import { mascararTelefone as formatarTelefone, soDigitosTelefone as digitos } from "../lib/telefone";
@@ -239,7 +239,7 @@ export default function Encomenda() {
               Enviar outra encomenda
             </button>
             <Link
-              to="/"
+              to="/vitrine"
               className="rounded-lg bg-acento-escuro px-6 py-3 font-medium text-white transition hover:bg-acento-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-escuro focus-visible:ring-offset-2 focus-visible:ring-offset-fundo"
             >
               Voltar à vitrine
@@ -257,11 +257,13 @@ export default function Encomenda() {
 
   return (
     <section className="mx-auto max-w-xl">
+      {/* Voltar à vitrine: canto superior esquerdo, destacado (desktop e mobile). */}
       <Link
-        to="/"
-        className="mb-4 inline-block text-sm text-texto-suave transition hover:text-acento-escuro"
+        to="/vitrine"
+        className="mb-5 inline-flex items-center gap-1.5 rounded-lg border border-borda bg-superficie px-3 py-2 text-sm font-medium text-acento-escuro transition hover:border-acento-escuro hover:bg-acento/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-escuro focus-visible:ring-offset-2 focus-visible:ring-offset-fundo"
       >
-        ← Voltar à vitrine
+        <ArrowLeft size={16} aria-hidden="true" />
+        Voltar à vitrine
       </Link>
 
       <h1 className="font-display text-3xl font-semibold text-texto sm:text-4xl">
@@ -269,7 +271,7 @@ export default function Encomenda() {
       </h1>
       <p className="mt-2 text-texto-suave">
         Não achou o que procurava? Conte o que você quer e anexe fotos de
-        referência — o ateliê analisa e entra em contato.
+        referência. O ateliê analisa e entra em contato.
       </p>
 
       <form onSubmit={aoEnviar} noValidate className="mt-6 space-y-5">
@@ -413,7 +415,7 @@ export default function Encomenda() {
               Medidas <span className="text-texto-suave">(opcional, em cm)</span>
             </legend>
             <p className="mb-2 text-xs text-texto-suave">
-              Preencha o que souber — pode deixar em branco o que não tiver.
+              Preencha o que souber. Pode deixar em branco o que não tiver.
             </p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {CAMPOS_MEDIDAS.map((campo) => (
@@ -440,7 +442,7 @@ export default function Encomenda() {
                         inputMode="numeric"
                         value={medidas[campo.chave]}
                         onChange={(e) => digitarMedida(campo.chave, e.target.value)}
-                        placeholder="—"
+                        placeholder="-"
                         className={inputClasse + " pr-9 text-center"}
                       />
                       <span

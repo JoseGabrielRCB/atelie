@@ -332,6 +332,16 @@ pré-renderizadas, ex. `/peca/:id` e `/admin/*`, sobem por CSR). Preencher `SITE
 
 ## Histórico de mudanças
 
+- **2026-06-25** — **Botão "Voltar à vitrine" em Carrinho e Encomenda + KPIs responsivos**. `Carrinho`
+  e `Encomenda` ganharam o mesmo botão destacado no **canto superior esquerdo** (ícone `ArrowLeft`,
+  borda/realce) que já existia em `DetalhePeca`, apontando para **`/vitrine`**. Na Encomenda, ele
+  **substitui** o link discreto "← Voltar à vitrine" que ia para a Home (`/`); os outros links
+  "vitrine" da Encomenda (tela de sucesso) e do Carrinho (estado vazio) também foram corrigidos de `/`
+  para `/vitrine`. **Travessões removidos** dos textos da página de Encomenda (frases reescritas com
+  ponto; placeholder de medida `—`→`-`). Na **Visão financeira**, o valor dos cartões de KPI
+  (Faturamento, Nº de vendas, Ticket médio, Descontos, Recompra) ficou **responsivo**
+  (`text-lg`→`sm:text-xl`→`lg:text-2xl`) com `break-words`/`min-w-0` para não estourar a caixa no
+  grid de 2 colunas no mobile (mesmo ajuste no `Cartao` compartilhado).
 - **2026-06-25** — **Logout revoga o refresh + nota de tokens**. `sair()` do `AuthContext` e do
   `ContaContext` agora chama `logoutAdmin`/`logoutCliente` (`lib/api.js`): faz `POST /api/auth/logout/`
   com o refresh (revoga via blacklist no servidor, `keepalive`) **e** limpa o storage. Os tokens
@@ -345,6 +355,16 @@ pré-renderizadas, ex. `/peca/:id` e `/admin/*`, sobem por CSR). Preencher `SITE
   Meus pedidos**: quando há `codigo_rastreio`, bloco com o código + **Copiar** (`navigator.clipboard`)
   + link "Acompanhar nos Correios" (site oficial, nova aba). Novo helper `atualizarRastreio` no
   `lib/api.js`.
+- **2026-06-25** — **Visão financeira (Fase 1)** no front. Nova aba **"Visão financeira"** (padrão)
+  em `pages/admin/Relatorios.jsx`, antes das 3 abas existentes, com os 4 blocos: **A** filtros (de/até
+  + atalhos *Este mês/Mês passado/Últimos 30·90 dias/Este ano* + granularidade) + Exportar CSV/PDF;
+  **B** KPIs (faturamento, nº vendas, ticket, descontos, recompra) com **selo de variação ↑/↓** vs.
+  período anterior (`Variacao`/`CartaoKpi`; cor por sentido — verde/vermelho para faturamento, âmbar
+  para descontos; "— sem base" quando `variacao_pct=null`); **C** tabela **DRE** (linhas de destaque
+  em negrito; campos das próximas fases mostram "Em breve"; pedidos em revisão como linha
+  informativa); **D** clientes/recompra (cartões agregados, sem dados pessoais). Helper
+  `relatorioFinanceiro` no `lib/api.js`; export reusa `baixarRelatorio("financeiro", …)`. Números em
+  `font-sans` (tabular). Fases 2/3 (margem, despesas) ficam para depois.
 - **2026-06-25** — **Relatórios (financeiro)** no front. Nova página **`/admin/relatorios`**
   (`pages/admin/Relatorios.jsx`, gate `ExigeFinanceiro`; item "Relatórios" no grupo *Pedidos* do
   `AdminNav`, só Dono/`acesso_financeiro`) com **3 relatórios em abas**: Vendas por período (filtro

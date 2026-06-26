@@ -29,6 +29,8 @@ Toda a interface visível ao usuário é em **PT-BR**. Não há cadastro/login d
 - psycopg2-binary 2.9 + PostgreSQL 16 (via docker-compose)
 - requests 2.32 (chamadas HTTP ao bot de WhatsApp — Evolution API)
 - reportlab 4.2 (geração de PDF dos relatórios — puro Python, sem libs do sistema)
+- matplotlib ≥3.10 (gráfico de barras embutido no **PDF financeiro** — PNG em memória, backend `Agg`,
+  sem dependência de SO; **import tardio**, só na geração do PDF)
 - django-cleanup 9.0 (apaga o arquivo físico de um `ImageField` ao excluir/trocar; **app por último**
   em `INSTALLED_APPS`). Apaga no **commit** da transação — testes que checam o arquivo usam
   `@pytest.mark.django_db(transaction=True)`.
@@ -355,6 +357,33 @@ Base: `/api/`. Respostas de lista são **paginadas** (`PageNumberPagination`, `P
   agrupados/filtrados pelo dia **local** via `Trunc*(tzinfo=...)`). Cada endpoint devolve **JSON** por
   padrão e, com `?formato=csv|pdf`, **baixa o arquivo** (CSV nativo com `;` + BOM para o Excel PT-BR;
   PDF com **reportlab**, import tardio). Relatórios são agregados — **não** expõem nome/contato/CPF.
+  - `GET /api/relatorios/financeiro/?de=&ate=&granularidade=` → **visão consolidada (Fase 1)**:
+    `resumo` (KPIs com comparativo: `faturamento`, `num_vendas`, `ticket_medio`, `descontos`,
+    `taxa_recompra`, cada um `{ valor, variacao_pct, disponivel }`), `comparativo` (janela
+    **imediatamente anterior, de mesma duração em dias**), `dre` (lista `{ linha, valor, destaque?,
+    informativo?, disponivel }`: Receita bruta → (–) Descontos → = Receita líquida; linha
+    **informativa** "Pedidos em revisão — a estornar" que **NÃO** deduz da receita), `clientes`
+    (agregado: `total`, `recorrentes`, `taxa_recompra`) e `em_revisao` (`total`/`num`).
+    `variacao_pct` = `(atual−ant)/ant×100` (1 casa) ou **`null` se `ant=0`**. **Taxa de recompra**
+    (definição fixada): % dos clientes com ≥1 pedido **pago** (lifetime — **não** recortado pelo
+    período) que têm **2+** pedidos pagos; por ser de carteira, vem com `variacao_pct=null`. Campos
+    das **Fases 2/3** (CMV, lucro bruto, margem, despesas, resultado operacional) vêm com
+    `disponivel=false` / `valor=null` para **não quebrar o contrato** quando forem preenchidos.
+    Default: últimos 30 dias. `400` se data inválida ou `de > ate`. (Fase 2 = margem/custo; Fase 3 =
+    DRE completa com despesas — ainda **não** implementadas; exigirão migrations.)
+    - **PDF do financeiro (layout próprio)**: `?formato=pdf` neste endpoint **não** usa a tabela
+      genérica — `RelatorioFinanceiroView.montar_pdf` chama `relatorios.gerar_pdf_financeiro(...)`, um
+      documento com a **marca do Ateliê da Sete**: faixa de cabeçalho (logo `catalogo/assets/logo-atelie.png`
+      + título + período + data de geração), **cartões de KPI** (valor + variação ▲/▼), **DRE estilizada**
+      (linhas de total em destaque, zebra, valores à direita, "Pedidos em revisão" separada e informativa),
+      **mini-gráfico** do faturamento por período via **matplotlib** → PNG em memória (**adaptativo**:
+      barras com até ~14 períodos; **linha + área** quando há muitos, com rótulos do eixo X afinados em
+      ~12 marcas — legível mesmo em 60–90 dias) e tabelas de
+      **produtos mais vendidos** e **cupons**, com rodapé "Página X de Y · Confidencial". Para enriquecer o
+      PDF, `montar_pdf` busca dados extras (`vendas_por_periodo`, `produtos_mais_vendidos`,
+      `cupons_por_periodo`) — o **JSON da API e o CSV continuam idênticos**. Símbolos ▲/▼ usam a DejaVu Sans
+      (do matplotlib) registrada no reportlab, com fallback `+/-`. Sem dado pessoal. Os **outros 3
+      relatórios** seguem com o PDF genérico (`exportar`/`_pdf_response`).
   - `GET /api/relatorios/vendas-por-periodo/?de=&ate=&granularidade=dia|semana|mes` → faturamento (R$)
     e nº de pedidos pagos por período + `totais` (`faturamento`, `pedidos`, `ticket_medio`). Default:
     últimos 30 dias. `400` se data inválida ou `de > ate`.
@@ -626,6 +655,37 @@ Django por `http://backend:8000`.
 
 ## Histórico de mudanças
 
+- **2026-06-25** — **Gráfico do PDF financeiro adaptativo** (legibilidade com muitos dados). Só
+  `relatorios._grafico_faturamento_png` mudou (sem tocar dados/views/outros componentes): com até ~14
+  períodos segue em **barras**; acima disso vira **linha + área preenchida** (escala bem melhor que
+  dezenas de barras finas). Em ambos os casos os rótulos do eixo X são **afinados** (~12 marcas, sem
+  sobreposição), `ylim` começa em 0 e a largura do PNG tem teto. Testes seguem verdes (28 em
+  `test_relatorios.py`).
+- **2026-06-25** — **PDF do Relatório Financeiro redesenhado** (profissional, com a marca). Só o **PDF do
+  endpoint `/relatorios/financeiro/`** muda — CSV e JSON intactos. Novo `relatorios.gerar_pdf_financeiro`
+  (reportlab/Platypus): faixa de cabeçalho com **logo** (`catalogo/assets/logo-atelie.png`) + título +
+  período + data de geração; **cartões de KPI** (valor + variação ▲/▼ verde/vermelho, âmbar p/ descontos);
+  **DRE estilizada** (totais em destaque, zebra, valores à direita, linha "Pedidos em revisão" separada e
+  informativa); **mini-gráfico de barras** do faturamento (novo dep **matplotlib** ≥3.10, backend `Agg`,
+  PNG em memória, import tardio); tabelas de **produtos mais vendidos** e **cupons**; rodapé "Página X de Y ·
+  Confidencial" (canvas numerado). Símbolos ▲/▼ via DejaVu Sans (do matplotlib) com fallback `+/-`. Novos
+  `relatorios.cupons_por_periodo` e `RelatorioFinanceiroView.montar_pdf` (reúne série/produtos/cupons só p/
+  o PDF). Logo copiado para `catalogo/assets/`. `requirements.txt` + **rebuild da imagem** do backend. Novo
+  teste `test_financeiro_exporta_pdf`. Os outros 3 relatórios seguem com o PDF genérico.
+- **2026-06-25** — **Relatório financeiro consolidado (Fase 1)** — **sem mudança de schema**. Nova
+  função `catalogo/relatorios.financeiro(de, ate, granularidade)` + endpoint
+  `GET /api/relatorios/financeiro/` (`RelatorioFinanceiroView`, gate `PodeFinanceiro`, `?formato=csv|pdf`):
+  KPIs com **comparativo** (janela imediatamente anterior de mesma duração; `variacao_pct` 1 casa,
+  `null` se base 0), **DRE parcial** (Receita bruta → (–) Descontos → = Receita líquida; linha
+  **informativa** de pedidos `em_revisao` que NÃO deduz), **taxa de recompra** (definição fixada:
+  lifetime, % dos clientes pagantes com 2+ pedidos pagos; sem comparativo de período) e bloco
+  **clientes/recompra agregado** (sem nome/contato/CPF — LGPD). Campos das Fases 2 (margem/CMV) e 3
+  (despesas/resultado) vêm com `disponivel=false`/`valor=null` (contrato à prova de futuro). Front:
+  nova aba **"Visão financeira"** (padrão) em Admin › Relatórios com os 4 blocos (filtros + atalhos
+  Este mês/Mês passado/Últimos 30·90 dias/Este ano; KPIs com selo ↑/↓; DRE; clientes/recompra) +
+  export CSV/PDF (`relatorioFinanceiro` em `lib/api.js`). 6 testes novos em `test_relatorios.py`
+  (comparativo, divisão por zero, recompra, `em_revisao` informativo, campos futuros, CSV). Suíte:
+  **251 testes**. Fases 2/3 (exigem migrations) ficam para depois.
 - **2026-06-25** — **Privacidade / cache HTTP / JWT**. Auditados logs e o exception handler: **sem
   PII/segredo** (só status codes; sem stack trace ao usuário em produção). Novo
   `CacheControlMiddleware`: conteúdo privado (auth/conta/admin/JWT) → `no-store, private`; catálogo

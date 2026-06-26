@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { useCarrinho } from "../context/CarrinhoContext";
 import { useConta } from "../context/ContaContext";
@@ -69,7 +70,7 @@ export default function Carrinho() {
     return (
       <Vazio texto="Seu pedido está vazio.">
         <Link
-          to="/"
+          to="/vitrine"
           className="rounded-lg bg-acento-escuro px-6 py-3 font-medium text-white transition hover:bg-acento-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-escuro focus-visible:ring-offset-2 focus-visible:ring-offset-fundo"
         >
           Ver a vitrine
@@ -86,6 +87,16 @@ export default function Carrinho() {
 
   return (
     <section className="mx-auto max-w-2xl">
+      {/* Voltar à vitrine: canto superior esquerdo, destacado (mesma posição no
+          desktop e no mobile). */}
+      <Link
+        to="/vitrine"
+        className="mb-5 inline-flex items-center gap-1.5 rounded-lg border border-borda bg-superficie px-3 py-2 text-sm font-medium text-acento-escuro transition hover:border-acento-escuro hover:bg-acento/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-escuro focus-visible:ring-offset-2 focus-visible:ring-offset-fundo"
+      >
+        <ArrowLeft size={16} aria-hidden="true" />
+        Voltar à vitrine
+      </Link>
+
       <h1 className="mb-6 font-display text-3xl font-semibold text-texto">
         Meu pedido
       </h1>

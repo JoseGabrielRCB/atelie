@@ -23,6 +23,7 @@ from .views import (
     PecaViewSet,
     PedidoViewSet,
     PromocaoViewSet,
+    RelatorioFinanceiroView,
     RelatorioProdutosVendidosView,
     RelatorioResumoMesView,
     RelatorioVendasPeriodoView,
@@ -63,6 +64,11 @@ urlpatterns = [
     path("checkout/", CheckoutView.as_view(), name="checkout"),
     path("cupom/validar/", CupomValidarView.as_view(), name="cupom-validar"),
     # Relatórios financeiros (gate PodeFinanceiro; ?formato=csv|pdf exporta).
+    path(
+        "relatorios/financeiro/",
+        RelatorioFinanceiroView.as_view(),
+        name="relatorio-financeiro",
+    ),
     path(
         "relatorios/vendas-por-periodo/",
         RelatorioVendasPeriodoView.as_view(),
